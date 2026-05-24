@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traderepublic-sync"
+version = "0.1.0"
+description = "Unofficial Trade Republic sync library: WAF acquisition, login + 2FA, WebSocket data fetching, transaction parsing."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Helios de Creisquer", email = "hdecreis@gmail.com" },
+]
+keywords = ["trade-republic", "traderepublic", "finance", "broker", "sync", "scraping"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+]
+
+dependencies = [
+    "websockets>=15,<16",
+    "requests>=2.31,<3",
+]
+
+[project.optional-dependencies]
+playwright = ["playwright>=1.52"]
+selenium = ["selenium>=4"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/hdecreis/libtrsync"
+Issues = "https://github.com/hdecreis/libtrsync/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+traderepublic_sync = ["py.typed"]
