@@ -45,3 +45,4 @@ tests/out/
 # AI helpers
 .claude
 CLAUDE.md
+RELEASE_PLAYBOOK.md
