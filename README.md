@@ -159,7 +159,7 @@ These are dependency-free helpers you can use without authenticating:
 
 ```python
 from traderepublic_sync import (
-    parse_euro,                # "1 000,00 EUR" → 1000.0
+    parse_currency_amount,                # "1 000,00 EUR" → 1000.0
     parse_detail_sections,     # timelineDetailV2 dict → structured dict
     extract_isin_from_icon,    # "logos/FR0011550672/v2" → "FR0011550672"
 )
@@ -171,7 +171,7 @@ from traderepublic_sync import (
 src/traderepublic_sync/
 ├── client.py       # TRClient (login, 2FA, websocket fetch)
 ├── waf.py          # AWS WAF token via Playwright or Selenium
-├── parsing.py      # parse_euro, parse_detail_sections, ISIN extraction
+├── parsing.py      # parse_currency_amount, parse_detail_sections, ISIN extraction
 ├── state.py        # ConnectionState dataclass
 ├── constants.py    # API URLs, default headers, WS connect payload
 ├── exceptions.py   # TRAuthError
