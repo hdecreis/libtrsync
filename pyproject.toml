@@ -47,3 +47,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 traderepublic_sync = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
