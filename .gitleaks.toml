@@ -12,3 +12,22 @@ description = "TR chat_flow_key values — routing identifiers for TR support ch
 regexes = ['''NHC_\d+_[a-z_]+''']
 paths = ['''tests/fixtures/.*\.json''']
 
+[[rules]]
+id = "aws-access-token"
+[[rules.allowlists]]
+description = "ASIA…/AKIA… mentions in the redaction scripts (regex patterns + placeholder values) and CHANGELOG (release notes describing those rules) — not real AWS credentials"
+paths = [
+    '''scripts/redact_dump\.py''',
+    '''scripts/extract_fixture\.py''',
+    '''CHANGELOG\.md''',
+]
+
+# Defensive global allowlist: pinned to the literal placeholder string only,
+# so the build won't break if a future gitleaks version renames the
+# AWS-key rule. Real ASIA…/AKIA… keys outside the redacted placeholder
+# are still caught by the default rules.
+[allowlist]
+description = "Library-wide allowlist for redaction placeholders"
+regexTarget = "match"
+regexes = ['''AKIAREDACTEDAWSKEY00''']
+

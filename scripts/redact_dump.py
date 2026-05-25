@@ -78,6 +78,19 @@ PHONE_RE = re.compile(r"\+\d{6,}")
 # (always 2 letters + 10 alphanumeric) are not matched.
 LONG_DIGITS_RE = re.compile(r"\b\d{10,}\b")
 URL_WITH_QUERY_RE = re.compile(r"(https?://[^\s?]+)\?[^\s]*")
+# AWS access key IDs — STS temp creds (ASIA…) and IAM static (AKIA…).
+# Trips GitHub secret scanning even when embedded in a redacted URL or
+# decoded form, so we scrub it directly in addition to the URL-query rule.
+AWS_KEY_ID_RE = re.compile(r"\b(?:ASIA|AKIA)[A-Z0-9]{16,}\b")
+# Defensive: match the bare ``X-Amz-Credential=…`` parameter name even when
+# the surrounding URL has somehow lost its ``?`` (URL-decoded payload, log
+# line, etc.) so secret-scanning rules can't fire on the fixture.
+X_AMZ_CRED_RE = re.compile(r"X-Amz-Credential=[^&\s\"']+", re.IGNORECASE)
+# TR-style masked tails: ``··7892`` (Google Pay card last-4), ``..4118``
+# (IBAN tail). Two-or-more masking chars (· · • . *) followed by 2–6
+# alphanumeric chars. Last-4 isn't PCI-sensitive on its own, but for
+# public fixtures we want every digit-bearing identifier impersonal.
+MASKED_TAIL_RE = re.compile(r"[·•\.\*]{2,}([A-Z0-9]{2,6})\b")
 
 REPLACEMENTS = {
     "iban_regex": "FR7600000000000000000000000",
@@ -85,6 +98,9 @@ REPLACEMENTS = {
     "email_regex": "redacted@example.com",
     "phone_regex": "+33600000000",
     "url_query": r"\1?REDACTED",
+    "aws_key_id": "AKIAREDACTEDAWSKEY00",
+    "x_amz_credential": "X-Amz-Credential=REDACTED",
+    "masked_tail": "0000",  # the regex preserves the leading dots
 }
 
 
@@ -195,6 +211,24 @@ class Redactor:
 
         # URL query strings (incl. AWS pre-signed S3).
         s = URL_WITH_QUERY_RE.sub(REPLACEMENTS["url_query"], s)
+
+        # Belt-and-braces against AWS credential leaks that secret scanners
+        # alert on: scrub explicit access-key IDs and the ``X-Amz-Credential``
+        # parameter name even outside a URL context.
+        if X_AMZ_CRED_RE.search(s):
+            s = X_AMZ_CRED_RE.sub(REPLACEMENTS["x_amz_credential"], s)
+            self.stats["x_amz_credential"] += 1
+        if AWS_KEY_ID_RE.search(s):
+            s = AWS_KEY_ID_RE.sub(REPLACEMENTS["aws_key_id"], s)
+            self.stats["aws_key_id"] += 1
+        # Masked card/IBAN tails: keep the leading masking chars (so the
+        # value still ``looks`` like what the parser would see), replace
+        # the trailing identifier with all-zeros.
+        if MASKED_TAIL_RE.search(s):
+            def _strip_tail(m):
+                return m.group(0).replace(m.group(1), REPLACEMENTS["masked_tail"][: len(m.group(1))])
+            s = MASKED_TAIL_RE.sub(_strip_tail, s)
+            self.stats["masked_tail"] += 1
 
         # User-supplied literal terms (case-insensitive).
         for rgx, term in self._also_redact_re:

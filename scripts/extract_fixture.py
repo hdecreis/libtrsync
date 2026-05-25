@@ -25,6 +25,13 @@ IBAN_RE = re.compile(r"[A-Z]{2}\d{2}\s?[A-Z0-9\s]{11,30}")
 LONG_DIGITS_RE = re.compile(r"\b\d{10,}\b")
 JWT_RE = re.compile(r"eyJ[A-Za-z0-9_\-\.]{20,}")
 PHONE_RE = re.compile(r"\+\d{6,}")
+# AWS access keys + the ``X-Amz-Credential`` URL parameter — secret
+# scanning fires on either even when the rest of the URL has been redacted.
+AWS_KEY_ID_RE = re.compile(r"\b(?:ASIA|AKIA)[A-Z0-9]{16,}\b")
+X_AMZ_CRED_RE = re.compile(r"X-Amz-Credential=[^&\s\"']+", re.IGNORECASE)
+# TR's masked tails: ``··7892`` (card last-4), ``..4118`` (IBAN tail).
+# Preserve the masking chars and zero out the identifier.
+MASKED_TAIL_RE = re.compile(r"[·•\.\*]{2,}([A-Z0-9]{2,6})\b")
 
 
 def sanitize(obj):
@@ -47,6 +54,12 @@ def sanitize(obj):
         s = LONG_DIGITS_RE.sub("1234567890", s)
         s = JWT_RE.sub("REDACTED_JWT", s)
         s = PHONE_RE.sub("+33600000000", s)
+        s = X_AMZ_CRED_RE.sub("X-Amz-Credential=REDACTED", s)
+        s = AWS_KEY_ID_RE.sub("AKIAREDACTEDAWSKEY00", s)
+        s = MASKED_TAIL_RE.sub(
+            lambda m: m.group(0).replace(m.group(1), "0" * len(m.group(1))),
+            s,
+        )
         return s
     return obj
 

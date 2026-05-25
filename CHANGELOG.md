@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-05-25
+
+Patch release: scrub an AWS pre-signed URL that slipped into one of
+the new PEA fixtures shipped in 0.3.0 (GitHub secret-scanning flagged
+the `X-Amz-Credential` parameter), and harden both extraction scripts
+so the same class of leak cannot recur.
+
+### Fixed
+- `tests/fixtures/pea_purchase.json` had a real AWS pre-signed S3 URL
+  (with `X-Amz-Security-Token`, `X-Amz-Credential` and `X-Amz-Signature`)
+  in a `document_urls` entry. Query string stripped in place; no other
+  fixture is affected.
+- `tests/fixtures/card_expense.json` carried a real payment-card last-4
+  (`··7892`, Google Pay row) inherited from the original 0.2.0 fixture
+  set. Card last-4 isn't PCI-sensitive on its own, but a public fixture
+  should be impersonal — rewritten to `··0000`.
+
+### Changed
+- `scripts/redact_dump.py` and `scripts/extract_fixture.py` now apply
+  three additional regex scrubs in every string they touch:
+  - `\b(?:ASIA|AKIA)[A-Z0-9]{16,}\b` — STS-temporary and IAM-static
+    AWS access key IDs, replaced with `AKIAREDACTEDAWSKEY00`.
+  - `X-Amz-Credential=…` parameter (case-insensitive), replaced with
+    `X-Amz-Credential=REDACTED`.
+  - `[·•\.\*]{2,}[A-Z0-9]{2,6}` — TR-style masked tails such as
+    `··7892` (card last-4) or `..4118` (IBAN tail). The leading
+    masking chars are preserved; the trailing identifier is replaced
+    with zeros (so the value still ``looks`` like what the parser
+    would see).
+
+  The AWS rules are belt-and-braces on top of the existing
+  URL-query-string rule — they catch the same identifiers even when
+  the surrounding URL has been URL-decoded, partially redacted, or
+  only appears in a log line / error message that secret scanning
+  would still alert on.
+- `.gitleaks.toml` allowlists path-scope the `aws-access-token` rule
+  for `scripts/redact_dump.py`, `scripts/extract_fixture.py` and
+  `CHANGELOG.md` (the regex patterns and the `AKIAREDACTEDAWSKEY00`
+  placeholder are intentional, not real credentials). A defensive
+  global allowlist pins the placeholder string in case gitleaks ever
+  renames the rule.
+
 ## [0.3.0] — 2026-05-25
 
 Hardens the auth lifecycle for long-running consumers, makes
@@ -176,7 +218,8 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.1.0
