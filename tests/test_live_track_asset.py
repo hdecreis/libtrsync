@@ -5,6 +5,11 @@ Usage:
 
     type: crypto | stock | etf | bond | derivative | fund
 
+Session state is persisted to ~/.config/libtrsync/session.json
+and test configuration to ~/.config/libtrsync/testconfig.json
+so that subsequent runs reuse the existing WAF token + session
+token and skip login/2FA.
+
 Examples:
     python test_live_track_asset.py bitcoin crypto
     python test_live_track_asset.py apple stock
@@ -25,12 +30,22 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from traderepublic_sync import ConnectionState, TRClient, TRAuthError
 
-STATE_FILE = os.path.join(ROOT, ".libtrsync")
-_config_path = os.path.join(ROOT, ".testconfig")
-if not os.path.exists(_config_path):
-    print(f"Missing {_config_path} — create it with {{\"phone\": \"+33...\", \"pin\": \"1234\"}}", file=sys.stderr)
+config_path = Path(
+    os.environ.get("LIBTRSYNC_TESTCONFIG")
+    or Path.Home() / ".config/libtrsync/testconfig.json"
+)
+
+session_path = Path(
+    os.environ.get("LIBTRSYNC_SESSION")
+    or Path.Home() / ".config/libtrsync/session.json"
+)
+
+
+STATE_FILE = session_path
+if not os.path.exists(config_path):
+    print(f"Missing {config_path} — create it with {{\"phone\": \"+33...\", \"pin\": \"1234\"}}", file=sys.stderr)
     sys.exit(1)
-with open(_config_path) as _f:
+with open(config_path) as _f:
     _cfg = json.load(_f)
 PHONE: str = _cfg["phone"]
 PIN: str = _cfg["pin"]
