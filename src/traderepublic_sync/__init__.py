@@ -8,7 +8,7 @@ from .parsing import (
     extract_isin_from_icon,
     normalize_tr_id,
     parse_detail_sections,
-    parse_euro,
+    parse_currency_amount,
 )
 from .state import ConnectionState
 from .waf import get_waf_token
@@ -25,7 +25,7 @@ __all__ = [
     # WAF
     "get_waf_token",
     # Parsing utilities
-    "parse_euro",
+    "parse_currency_amount",
     "parse_detail_sections",
     "extract_isin_from_icon",
     "normalize_tr_id",

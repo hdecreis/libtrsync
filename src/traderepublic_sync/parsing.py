@@ -7,23 +7,49 @@ response payloads.
 
 import re
 
+_CURRENCY_RE = re.compile(r"\b(EUR|USD|CAD|CHF|GBP)\b")
 
-def parse_euro(text):
-    """Parse a TR-formatted amount like '15,635 EUR', '1 000,00 EUR', '+200,00 $' into float."""
+
+def parse_currency_amount(text):
+    """Parse a TR-formatted amount string into a float.
+
+    Handles:
+    - Currency symbols: € $ £
+    - ISO currency codes: EUR USD CAD CHF GBP
+    - French thousand separators (space-separated groups)
+    - Leading +/-
+    - Regular spaces, NO-BREAK SPACE (U+00A0), NARROW NO-BREAK SPACE (U+202F)
+    """
     if not text or not isinstance(text, str):
         return None
+    cleaned = _CURRENCY_RE.sub("", text)
     cleaned = (
-        text.replace("€", "")  # €
+        cleaned
+        .replace("€", "")
         .replace("$", "")
-        .replace("£", "")  # £
-        .replace("\xa0", "")    # NO-BREAK SPACE
-        .replace(" ", "")  # NARROW NO-BREAK SPACE
-        .replace(" ", "")
+        .replace("£", "")
+        .replace("\xa0", "")   # NO-BREAK SPACE (U+00A0)
+        .replace(" ", "") # NARROW NO-BREAK SPACE (U+202F)
+        .replace(" ", "")      # plain space (thousand separator)
         .replace("+", "")
         .strip()
     )
-    # FR format: comma as decimal sep
-    cleaned = cleaned.replace(",", ".")
+    # Detect decimal separator by which comes last.
+    # Both present: last one is decimal (e.g. "1,023,999.01" → US; "1.000,99" → FR)
+    # Only comma:   FR decimal (e.g. "15,635")
+    # Only dot or neither: standard decimal
+    has_comma = "," in cleaned
+    has_dot = "." in cleaned
+    if has_comma and has_dot:
+        if cleaned.rfind(".") > cleaned.rfind(","):
+            # US format: commas are thousands separators
+            cleaned = cleaned.replace(",", "")
+        else:
+            # FR/EU format: dots are thousands separators
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+    elif has_comma:
+        cleaned = cleaned.replace(",", ".")
+
     try:
         return float(cleaned)
     except ValueError:
@@ -31,16 +57,22 @@ def parse_euro(text):
 
 
 def _extract_currency_symbol(text):
-    """Extract currency code from a text containing a currency symbol."""
+    """Extract currency code from a text containing a currency symbol or ISO code."""
     if not text:
         return None
     if "$" in text:
         return "USD"
-    if "£" in text:  # £
+    if "£" in text:
         return "GBP"
     if "CHF" in text:
         return "CHF"
-    if "€" in text:  # €
+    if "CAD" in text:
+        return "CAD"
+    if "USD" in text:
+        return "USD"
+    if "GBP" in text:
+        return "GBP"
+    if "€" in text or "EUR" in text:
         return "EUR"
     return None
 
@@ -99,19 +131,19 @@ def parse_detail_sections(detail_response):
                 elif title == "Type d'ordre":
                     result["order_type"] = text
                 elif title == "Frais":
-                    val = parse_euro(text)
+                    val = parse_currency_amount(text)
                     if val is not None and val > 0:
                         result["fees"] = val
                         result["fees_currency"] = _extract_currency_symbol(text)
                 elif title in ("Impôts", "Taxes"):  # Impôts
-                    val = parse_euro(text)
+                    val = parse_currency_amount(text)
                     if val is not None:
                         result["taxes"] = abs(val)
                         result["taxes_currency"] = _extract_currency_symbol(text)
                 elif title == "Total":
-                    result["total"] = parse_euro(text)
+                    result["total"] = parse_currency_amount(text)
                 elif title == "Dividende par action":
-                    result["dividend_per_share"] = parse_euro(text)
+                    result["dividend_per_share"] = parse_currency_amount(text)
                     result["dividend_currency"] = _extract_currency_symbol(text)
                 elif title == "Expéditeur":  # Expéditeur
                     result["sender"] = text
@@ -120,9 +152,9 @@ def parse_detail_sections(detail_response):
                 elif title == "Transaction":
                     _parse_transaction_nested(detail, result)
                 elif title in ("Actions", "Titres"):
-                    result["quantity"] = parse_euro(text)
+                    result["quantity"] = parse_currency_amount(text)
                 elif title in ("Prix du titre", "Cours du titre"):
-                    result["unit_price"] = parse_euro(text)
+                    result["unit_price"] = parse_currency_amount(text)
                 elif title == "Événement":  # Événement
                     if not result["order_type"]:
                         result["order_type"] = text
@@ -155,12 +187,12 @@ def _parse_transaction_nested(detail, result):
                     else ""
                 )
                 if sub_title in ("Actions", "Titres"):
-                    result["quantity"] = parse_euro(sub_text)
+                    result["quantity"] = parse_currency_amount(sub_text)
                 elif sub_title in ("Prix du titre", "Cours du titre"):
-                    result["unit_price"] = parse_euro(sub_text)
+                    result["unit_price"] = parse_currency_amount(sub_text)
                 elif sub_title == "Total":
                     if result["total"] is None:
-                        result["total"] = parse_euro(sub_text)
+                        result["total"] = parse_currency_amount(sub_text)
 
     # Fallback: parse "3 x 17,41 EUR" from displayValue
     if result["quantity"] is None:
@@ -180,7 +212,7 @@ def _parse_transaction_nested(detail, result):
                 result["quantity"] = float(qty_str)
             except ValueError:
                 pass
-            result["unit_price"] = parse_euro(text)
+            result["unit_price"] = parse_currency_amount(text)
 
 
 def extract_isin_from_icon(icon_path):
