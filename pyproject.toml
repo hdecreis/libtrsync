@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Unofficial Trade Republic sync library: WAF acquisition, login + 2FA, WebSocket data fetching, transaction parsing."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT AND (Apache-2.0 OR BSD-2-Clause)"
+license = "MIT"
 license-files = [ "LICENSE" ]
 authors = [
     { name = "Helios de Creisquer", email = "hdecreis@gmail.com" },
