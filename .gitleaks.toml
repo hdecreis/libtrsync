@@ -1,0 +1,14 @@
+# .gitleaks.toml — config for the gitleaks pre-commit hook.
+# Inherits all default rules from gitleaks; this file only adds allowlists
+# for known false positives.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "TR chat_flow_key values — routing identifiers for TR support chat, not credentials"
+regexes = ['''NHC_\d+_[a-z_]+''']
+paths = ['''tests/fixtures/.*\.json''']
+
