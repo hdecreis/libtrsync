@@ -5,23 +5,46 @@ transaction fetching. Returns both raw TR items and dual-legged transaction
 dicts.
 """
 
-import asyncio  # noqa: F401  (kept for callers that want `asyncio.run`)
+import asyncio
 import base64
 import hashlib
 import json
 import logging
 import re
 import uuid
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Union
 
 import requests
 import websockets
 
+from ._classify import (
+    classify_http,
+    classify_network_error,
+    classify_ws_connect_error,
+    classify_ws_error_frame,
+)
 from .constants import DEFAULT_HEADERS, TR_API_BASE, TR_WS_URL, WS_CONNECT_PAYLOAD
-from .exceptions import TRAuthError
-from .parsing import parse_detail_sections
+from .exceptions import (
+    SessionExpired,
+    TRAuthError,
+    TRError,
+    TransientError,
+    WafExpired,
+)
+from .parsing import normalize_tr_id, parse_detail_sections
 from .dual_legged.mapping import build_dual_legged_transaction, deduplicate_pea
 from .session import TRSession
 from .waf import get_waf_token
+
+# A hook may be a plain function or an async coroutine function. It may
+# return a fresh token string (which we adopt) or ``None`` (in which case
+# we assume the hook has already mutated ``self.waf_token`` /
+# ``self._session_token``).
+WafHook = Callable[[], Union[str, None, Awaitable[Union[str, None]]]]
+SessionHook = Callable[[], Union[str, None, Awaitable[Union[str, None]]]]
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +62,42 @@ class TRClient:
         result = asyncio.run(client.fetch_transactions(session_token))
     """
 
-    def __init__(self, waf_token=None, device_info=None, locale="fr"):
+    def __init__(
+        self,
+        waf_token: str | None = None,
+        device_info: str | None = None,
+        locale: str = "fr",
+        session_token: str | None = None,
+        on_waf_expired: WafHook | None = None,
+        on_session_expired: SessionHook | None = None,
+    ):
+        """Construct a TR client.
+
+        Args:
+            waf_token: pre-acquired AWS WAF token (e.g. from a previous run).
+            device_info: opaque base64 device fingerprint — reuse to keep the
+                device "trusted" and avoid extra friction on re-auth.
+            locale: ``fr``, ``de``, ``en``, …
+            session_token: pre-acquired ``tr_session`` cookie value. If
+                provided, all WS/REST calls can omit the explicit ``session_token``
+                argument.
+            on_waf_expired: optional callback fired when a request fails with
+                :class:`WafExpired`. May be sync or async. Should return a
+                fresh WAF token string, or ``None`` after mutating
+                ``self.waf_token`` itself. The library retries the failed
+                call once after the hook returns successfully; if the hook
+                is absent or returns falsy, :class:`WafExpired` propagates.
+            on_session_expired: optional callback fired when a request fails
+                with :class:`SessionExpired`. Notification-only by default;
+                if the callback returns a new session token string the
+                library adopts it and retries once.
+        """
         self.waf_token = waf_token or ""
         self.device_info = device_info or self._generate_device_info()
         self.locale = locale
-        self._session_token = None
+        self._session_token = session_token
+        self.on_waf_expired = on_waf_expired
+        self.on_session_expired = on_session_expired
 
     @staticmethod
     def _generate_device_info() -> str:
@@ -57,6 +111,108 @@ class TRClient:
         h["x-tr-device-info"] = self.device_info
         return h
 
+    # ── Refresh hooks ──────────────────────────────────────────────────
+
+    def _refresh_waf_sync(self) -> bool:
+        """Invoke ``on_waf_expired`` (sync path). Returns True if WAF was renewed."""
+        if not self.on_waf_expired:
+            return False
+        result = self.on_waf_expired()
+        if asyncio.iscoroutine(result):
+            # Caller is on the sync REST path — can't await. Tell the user.
+            try:
+                result.close()  # best-effort cleanup
+            except Exception:
+                pass
+            raise TRError(
+                "on_waf_expired returned a coroutine but the failing call is "
+                "synchronous. Provide a sync callback (or wrap your async one)."
+            )
+        if isinstance(result, str) and result:
+            self.waf_token = result
+        return bool(self.waf_token)
+
+    async def _refresh_waf_async(self) -> bool:
+        """Invoke ``on_waf_expired`` (async-aware). Returns True if WAF was renewed."""
+        if not self.on_waf_expired:
+            return False
+        result = self.on_waf_expired()
+        if asyncio.iscoroutine(result):
+            result = await result
+        if isinstance(result, str) and result:
+            self.waf_token = result
+        return bool(self.waf_token)
+
+    def _notify_session_expired_sync(self) -> bool:
+        """Invoke ``on_session_expired`` (sync path). Returns True if session was renewed."""
+        if not self.on_session_expired:
+            return False
+        result = self.on_session_expired()
+        if asyncio.iscoroutine(result):
+            try:
+                result.close()
+            except Exception:
+                pass
+            return False
+        if isinstance(result, str) and result:
+            self._session_token = result
+            return True
+        return False
+
+    async def _notify_session_expired_async(self) -> bool:
+        if not self.on_session_expired:
+            return False
+        result = self.on_session_expired()
+        if asyncio.iscoroutine(result):
+            result = await result
+        if isinstance(result, str) and result:
+            self._session_token = result
+            return True
+        return False
+
+    # ── WS connect helper ──────────────────────────────────────────────
+
+    @asynccontextmanager
+    async def _ws_session(self):
+        """Open the TR WebSocket with WAF-aware connect retry.
+
+        Drop-in replacement for ``async with websockets.connect(TR_WS_URL) as ws:``.
+        On a 403 (WAF reject) during the WS upgrade, calls ``on_waf_expired``
+        and retries the connect once. Any other connection-level failure is
+        re-raised as :class:`TransientError`.
+        """
+        async def _connect():
+            try:
+                return await websockets.connect(TR_WS_URL)
+            except WafExpired:
+                raise
+            except Exception as e:
+                raise classify_ws_connect_error(e) from e
+
+        try:
+            ws = await _connect()
+        except WafExpired:
+            if not await self._refresh_waf_async():
+                raise
+            ws = await _connect()
+
+        try:
+            try:
+                yield ws
+            except SessionExpired:
+                # Notify the consumer so they can flag the connection as
+                # ``pending_2fa`` immediately. Re-acquiring the session
+                # requires 2FA, which the library cannot drive on its own,
+                # so we always re-raise — the consumer's call site retries
+                # after the user re-authenticates.
+                await self._notify_session_expired_async()
+                raise
+        finally:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
     # ── WAF ────────────────────────────────────────────────────────────
 
     def acquire_waf_token(self, method: str = "playwright") -> str:
@@ -67,41 +223,79 @@ class TRClient:
     # ── Auth ───────────────────────────────────────────────────────────
 
     def login(self, phone_number: str, pin: str) -> dict:
-        """Initiate login. Returns dict with process_id and countdown."""
-        resp = requests.post(
-            f"{TR_API_BASE}/api/v1/auth/web/login",
-            json={"phoneNumber": phone_number, "pin": pin},
-            headers=self._headers(),
-        )
-        if resp.status_code != 200:
-            raise TRAuthError(f"Login failed (HTTP {resp.status_code}): {resp.text}")
+        """Initiate login. Returns dict with process_id and countdown.
 
-        data = resp.json()
-        process_id = data.get("processId")
-        if not process_id:
-            raise TRAuthError("Login response missing processId")
+        On :class:`WafExpired`, the ``on_waf_expired`` hook (if set) is
+        invoked and the request is retried once.
+        """
+        def _do():
+            try:
+                resp = requests.post(
+                    f"{TR_API_BASE}/api/v1/auth/web/login",
+                    json={"phoneNumber": phone_number, "pin": pin},
+                    headers=self._headers(),
+                )
+            except requests.RequestException as e:
+                raise classify_network_error(e, context="login") from e
+            classify_http(resp, context="login")
 
-        return {
-            "process_id": process_id,
-            "countdown": data.get("countdownInSeconds", 60),
-        }
+            data = resp.json()
+            process_id = data.get("processId")
+            if not process_id:
+                raise TRAuthError("Login response missing processId")
+
+            return {
+                "process_id": process_id,
+                "countdown": data.get("countdownInSeconds", 60),
+            }
+
+        try:
+            return _do()
+        except WafExpired:
+            if not self._refresh_waf_sync():
+                raise
+            return _do()
 
     def request_sms(self, process_id: str) -> bool:
         """Request 2FA code via SMS instead of push notification."""
-        resp = requests.post(
-            f"{TR_API_BASE}/api/v1/auth/web/login/{process_id}/resend",
-            headers=self._headers(),
-        )
-        return resp.status_code == 200
+        def _do():
+            try:
+                resp = requests.post(
+                    f"{TR_API_BASE}/api/v1/auth/web/login/{process_id}/resend",
+                    headers=self._headers(),
+                )
+            except requests.RequestException as e:
+                raise classify_network_error(e, context="request_sms") from e
+            if resp.status_code in (401, 403, 429) or resp.status_code >= 500:
+                classify_http(resp, context="request_sms")  # raises typed exception
+            return resp.status_code == 200
+
+        try:
+            return _do()
+        except WafExpired:
+            if not self._refresh_waf_sync():
+                raise
+            return _do()
 
     def verify_2fa(self, process_id: str, code: str) -> str:
         """Verify 2FA code. Returns session token on success."""
-        resp = requests.post(
-            f"{TR_API_BASE}/api/v1/auth/web/login/{process_id}/{code}",
-            headers=self._headers(),
-        )
-        if resp.status_code != 200:
-            raise TRAuthError(f"2FA verification failed (HTTP {resp.status_code}): {resp.text}")
+        def _do():
+            try:
+                resp = requests.post(
+                    f"{TR_API_BASE}/api/v1/auth/web/login/{process_id}/{code}",
+                    headers=self._headers(),
+                )
+            except requests.RequestException as e:
+                raise classify_network_error(e, context="verify_2fa") from e
+            classify_http(resp, context="verify_2fa")
+            return resp
+
+        try:
+            resp = _do()
+        except WafExpired:
+            if not self._refresh_waf_sync():
+                raise
+            resp = _do()
 
         # Extract session token from Set-Cookie header
         session_token = None
@@ -127,8 +321,34 @@ class TRClient:
 
     # ── WebSocket data fetching ────────────────────────────────────────
 
-    async def fetch_transactions(self, session_token: str | None = None) -> dict:
-        """Fetch all transactions + details via WebSocket.
+    async def fetch_transactions(
+        self,
+        session_token: str | None = None,
+        *,
+        since: datetime | str | None = None,
+        until: datetime | str | None = None,
+        since_id: str | None = None,
+    ) -> dict:
+        """Fetch transactions + details via WebSocket, optionally bounded.
+
+        TR returns the timeline newest-first with cursor pagination. The
+        filters below leverage that ordering to early-stop the walk and skip
+        the per-item ``timelineDetailV2`` round trip for anything we'd
+        throw away — so a daily incremental sync typically touches one or
+        two pages instead of the whole history.
+
+        Args:
+            session_token: ``tr_session`` cookie. Falls back to the one
+                stored on the client.
+            since: lower bound (inclusive) on the transaction timestamp.
+                Items older than this stop the walk. Accepts a ``datetime``
+                (naive ones are assumed UTC) or an ISO-8601 string.
+            until: upper bound (inclusive) on the transaction timestamp.
+                Items newer than this are skipped but the walk continues.
+            since_id: stop the walk as soon as this raw TR ``id`` is seen.
+                The boundary item itself is **not** included. IDs are
+                compared after :func:`normalize_tr_id` so callers can pass
+                either the raw or normalized form.
 
         Returns a dict with:
             - ``transactions``: list of dual-legged transaction dicts (deduped).
@@ -139,11 +359,16 @@ class TRClient:
         if not token:
             raise TRAuthError("No session token. Call login() + verify_2fa() first.")
 
+        since_dt = _coerce_datetime(since)
+        until_dt = _coerce_datetime(until)
+        since_id_norm = normalize_tr_id(since_id) if since_id else None
+
         raw_items = []
         dual_legged_transactions = []
         message_id = 0
+        stop_walk = False
 
-        async with websockets.connect(TR_WS_URL) as ws:
+        async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
             await ws.send(f"connect 31 {json.dumps(connect_payload)}")
@@ -152,7 +377,7 @@ class TRClient:
 
             after_cursor = None
             page = 0
-            while True:
+            while not stop_walk:
                 payload = {"type": "timelineTransactions", "token": token}
                 if after_cursor:
                     payload["after"] = after_cursor
@@ -172,12 +397,29 @@ class TRClient:
                 logger.info("Page %d: %d transactions", page, len(items))
 
                 for item in items:
-                    transaction_id = item.get("id")
+                    # Cheap filters first — they may save a detail round trip.
+                    raw_id = item.get("id")
+                    if since_id_norm and normalize_tr_id(raw_id) == since_id_norm:
+                        stop_walk = True
+                        break
+
+                    item_dt = _parse_iso_timestamp(item.get("timestamp"))
+
+                    if since_dt and item_dt and item_dt < since_dt:
+                        # Items are sorted newest-first; nothing after this
+                        # will be inside the window.
+                        stop_walk = True
+                        break
+
+                    if until_dt and item_dt and item_dt > until_dt:
+                        # Skip but keep walking — we're still above the window.
+                        continue
+
                     detail_raw = {}
-                    if transaction_id:
+                    if raw_id:
                         detail_payload = {
                             "type": "timelineDetailV2",
-                            "id": transaction_id,
+                            "id": raw_id,
                             "token": token,
                         }
                         message_id += 1
@@ -196,6 +438,9 @@ class TRClient:
 
                     if dual_legged_tx:
                         dual_legged_transactions.append(dual_legged_tx)
+
+                if stop_walk:
+                    break
 
                 after_cursor = data.get("cursors", {}).get("after")
                 if not after_cursor:
@@ -220,7 +465,7 @@ class TRClient:
         if not token:
             raise TRAuthError("No session token.")
 
-        async with websockets.connect(TR_WS_URL) as ws:
+        async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
             await ws.send(f"connect 34 {json.dumps(connect_payload)}")
@@ -271,7 +516,7 @@ class TRClient:
         pairs = await self.fetch_account_pairs(token)
         sec_acc_no = pairs[0]["securitiesAccountNumber"] if pairs else ""
 
-        async with websockets.connect(TR_WS_URL) as ws:
+        async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
             await ws.send(f"connect 31 {json.dumps(connect_payload)}")
@@ -431,7 +676,7 @@ class TRClient:
         if not token:
             raise TRAuthError("No session token.")
 
-        async with websockets.connect(TR_WS_URL) as ws:
+        async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
             await ws.send(f"connect 31 {json.dumps(connect_payload)}")
@@ -474,7 +719,13 @@ class TRClient:
 
         return result
 
-    def open_session(self, session_token: str | None = None) -> TRSession:
+    def open_session(
+        self,
+        session_token: str | None = None,
+        *,
+        auto_reconnect: bool = False,
+        on_reconnect=None,
+    ) -> TRSession:
         """Return a :class:`TRSession` async context manager for live subscriptions.
 
         Usage::
@@ -482,11 +733,23 @@ class TRClient:
             async with client.open_session(session_token) as session:
                 sub_id = await session.subscribe_ticker("US0378331005", on_price)
                 await asyncio.sleep(60)
+
+        ``auto_reconnect=True`` keeps the session alive across transient
+        WS drops, replaying live subscriptions on the new socket. The
+        ``on_waf_expired`` / ``on_session_expired`` hooks configured on this
+        client are forwarded to the session.
         """
         token = session_token or self._session_token
         if not token:
             raise TRAuthError("No session token.")
-        return TRSession(token=token, locale=self.locale)
+        return TRSession(
+            token=token,
+            locale=self.locale,
+            auto_reconnect=auto_reconnect,
+            on_waf_expired=self.on_waf_expired,
+            on_session_expired=self.on_session_expired,
+            on_reconnect=on_reconnect,
+        )
 
     async def fetch_cash_balance(self, session_token: str | None = None):
         """Fetch available cash balance via WebSocket."""
@@ -494,7 +757,7 @@ class TRClient:
         if not token:
             raise TRAuthError("No session token.")
 
-        async with websockets.connect(TR_WS_URL) as ws:
+        async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
             await ws.send(f"connect 31 {json.dumps(connect_payload)}")
@@ -547,26 +810,87 @@ def _pairs_to_accounts(pairs: list[dict]) -> list[dict]:
 
 
 async def _ws_sub(ws, msg_id: int, payload: dict, timeout: float = 5.0) -> dict:
-    """Send ``sub <msg_id> <payload>``, wait for the ``A`` data frame, unsub."""
+    """Send ``sub <msg_id> <payload>``, wait for the ``A`` data frame, unsub.
+
+    If the server replies with ``<msg_id> E …`` and the body looks like an
+    auth/session issue, raises the appropriate typed exception so callers
+    can react instead of seeing an empty dict.
+    """
     await ws.send(f"sub {msg_id} {json.dumps(payload)}")
-    pattern = re.compile(rf"^{msg_id} A ([\s\S]+)$")
+    a_pattern = re.compile(rf"^{msg_id} A ([\s\S]+)$")
+    e_pattern = re.compile(rf"^{msg_id} E ([\s\S]+)$")
     result: dict = {}
     try:
         for _ in range(20):
             frame = await asyncio.wait_for(ws.recv(), timeout=timeout)
-            m = pattern.match(frame)
+            m = a_pattern.match(frame)
             if m:
                 result = json.loads(m.group(1))
                 break
+            em = e_pattern.match(frame)
+            if em:
+                typed = classify_ws_error_frame(em.group(1))
+                if typed:
+                    raise typed
+                # Unrecognized error frame — surface so caller can log/decide.
+                raise TransientError(f"WS error frame: {em.group(1)[:200]}")
     except asyncio.TimeoutError:
         pass
     finally:
-        await ws.send(f"unsub {msg_id}")
         try:
-            await asyncio.wait_for(ws.recv(), timeout=1.0)
-        except asyncio.TimeoutError:
+            await ws.send(f"unsub {msg_id}")
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
+        except Exception:
+            # Connection may already be dead; nothing more we can do here.
             pass
     return result
+
+
+def _coerce_datetime(value):
+    """Accept None / ``datetime`` / ISO-8601 string. Return aware ``datetime`` or None.
+
+    Naive datetimes are assumed UTC (matching how TR serializes timestamps).
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        return _parse_iso_timestamp(value)
+    raise TypeError(f"Expected None, datetime, or ISO string; got {type(value).__name__}")
+
+
+_ISO_TRAILING_TZ_RE = re.compile(r"([+-]\d{2})(\d{2})$")
+
+
+def _parse_iso_timestamp(text):
+    """Tolerant ISO-8601 parser for TR timestamps.
+
+    Handles the three variants TR is known to emit:
+      - ``2026-05-18T14:26:40.491+0000`` (no colon in offset)
+      - ``2026-05-18T14:26:40.491Z``
+      - ``2026-05-18T14:26:40.491231Z`` (microsecond precision)
+
+    Returns an aware UTC ``datetime`` or ``None`` if the input is missing
+    or unparseable.
+    """
+    if not text or not isinstance(text, str):
+        return None
+    s = text.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    # Insert the missing colon in offsets like "+0000" → "+00:00".
+    s = _ISO_TRAILING_TZ_RE.sub(r"\1:\2", s)
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _to_float(value) -> float | None:
@@ -580,7 +904,20 @@ def _to_float(value) -> float | None:
 
 
 def _parse_ws_json(response):
-    """Extract JSON object from a WebSocket response string."""
+    """Extract JSON object from a WebSocket response string.
+
+    Raises a typed exception if the frame is an error frame (``<id> E …``)
+    so session/WAF problems surface instead of being silently treated as
+    empty results.
+    """
+    parts = response.split(" ", 2)
+    if len(parts) >= 2 and parts[1] == "E":
+        body = parts[2] if len(parts) > 2 else ""
+        typed = classify_ws_error_frame(body)
+        if typed:
+            raise typed
+        raise TransientError(f"WS error frame: {body[:200]}")
+
     start = response.find("{")
     end = response.rfind("}")
     if start != -1 and end != -1:

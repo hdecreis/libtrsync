@@ -6,7 +6,13 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from .client import TRClient
 from .session import TRSession
 from .constants import DEFAULT_HEADERS, TR_API_BASE, TR_WS_URL, WS_CONNECT_PAYLOAD
-from .exceptions import TRAuthError
+from .exceptions import (
+    SessionExpired,
+    TRAuthError,
+    TRError,
+    TransientError,
+    WafExpired,
+)
 from .parsing import (
     extract_isin_from_icon,
     normalize_tr_id,
@@ -46,5 +52,9 @@ __all__ = [
     "DEFAULT_HEADERS",
     "WS_CONNECT_PAYLOAD",
     # Exceptions
+    "TRError",
     "TRAuthError",
+    "WafExpired",
+    "SessionExpired",
+    "TransientError",
 ]

@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-25
+
+Hardens the auth lifecycle for long-running consumers, makes
+`fetch_transactions` cheap to run incrementally, fixes a silent
+data-loss bug in the PEA dedup path, and ships a redaction tool so
+users can attach safe dumps to bug reports.
+
+### Added
+- **Typed exception hierarchy** so consumers don't have to parse HTTP
+  status codes or WS frame bodies to decide what to do:
+  - `TRError` (new root) → `TRAuthError` → `WafExpired`, `SessionExpired`
+  - `TRError` → `TransientError`
+  - `TRAuthError` is kept so existing `except TRAuthError:` blocks still
+    catch WAF/session lifecycle errors.
+- **`on_waf_expired` / `on_session_expired` hooks** on `TRClient` (and
+  forwarded to `TRSession` via `open_session`). The WAF hook may be
+  sync or async, returns a fresh token (or `None`), and the library
+  retries the failing operation exactly once. The session hook is
+  notification-only — re-acquiring a session requires 2FA which the
+  library cannot drive on its own.
+- **Auto-reconnect for `TRSession`** (`auto_reconnect=True`). The reader
+  loop reconnects on `ConnectionClosed`, replays every live
+  subscription on the fresh socket, and applies exponential backoff
+  capped at `reconnect_max_backoff` (default 60s). Optional
+  `on_reconnect` callback fires after a successful reconnect.
+- **`fetch_transactions(since=, until=, since_id=)`** for lean
+  incremental sync. TR's newest-first cursor pagination is leveraged
+  to early-stop the walk and skip per-item `timelineDetailV2` round
+  trips for items outside the window. Typical daily sync now touches
+  one or two pages instead of the whole history. Accepts `datetime`
+  (naive treated as UTC) or ISO-8601 strings; `since_id` is matched
+  via `normalize_tr_id` so either the raw or normalized form works.
+- **`scripts/redact_dump.py`** — anonymizes a `examples/out/` folder
+  (or any directory of JSON dumps) so users can attach the result to
+  bug reports. Field-name and regex rules cover sender / IBAN /
+  email / phone / JWT / AWS pre-signed URL parameters; TR cash account
+  numbers get a deterministic placeholder mapping that stays
+  consistent across files; `--also-redact STRING` (repeatable,
+  case-insensitive) handles real names and any variant the regexes
+  cannot infer.
+- New "Reporting bugs" section in the README documenting the
+  smoke-fetch → redact → attach workflow.
+- New private `_classify.py` module: `classify_http`,
+  `classify_ws_connect_error`, `classify_ws_error_frame` — shared
+  vocabulary used by both `TRClient` and `TRSession`.
+- `session_token` keyword argument to `TRClient.__init__` so a
+  previously-acquired token can be supplied at construction time
+  instead of via every fetch call.
+- Tolerant ISO-8601 timestamp parser handling TR's three observed
+  variants (`+0000`, `Z`, microsecond `Z`).
+- Two new fixtures (`pea_pay_in.json`, `pea_purchase.json`) extracted
+  from real data and used to lock the PEA fix in place.
+- 42 new tests (`test_classify.py`, `test_fetch_filters.py`, plus
+  expanded `test_dual_legged.py`); suite is now 79 tests, all green.
+
+### Changed
+- **PEA event reclassification** — `PEA_SAVINGS_PLAN_PAY_IN` is now
+  `TRANSFER` (was `PURCHASE`) and `PEA_DEPOSIT_DEBIT` is now
+  `TRANSFER` (was `None` / skipped). These events represent the cash
+  top-up from the user's external bank or CTO into PEA cash that
+  funds an imminent trade, not the trade itself. **Output shape
+  change** for consumers that import PEA savings plan / manual PEA
+  trades: where they previously saw one merged event per day+ISIN,
+  they will now see two — the inbound TRANSFER and the actual
+  PURCHASE/SELL. The TRANSFER carries both `credit_amount` and
+  `debit_amount` so consumers can route credit → PEA cash and
+  debit → external/CTO without further guessing.
+- **`deduplicate_pea` rewritten** — the previous "merge richer event"
+  rule silently dropped real cash movements when a pay-in was
+  smaller than the trade (e.g. 10.23 € pay-in + 7.40 € PEA residual
+  → 17.63 € trade). The new implementation only collapses entries
+  with the same `transaction_type` AND same primary amount on the
+  same date+ISIN — the rare TR-side glitch case where two events
+  are genuinely identical.
+- REST helpers (`login`, `request_sms`, `verify_2fa`) now raise
+  `WafExpired` / `SessionExpired` / `TransientError` / `TRAuthError`
+  instead of a bare `TRAuthError` with HTTP details in the message.
+- Every WS-fetching method now goes through a `_ws_session()` async
+  context manager that handles WAF-aware connect retry uniformly.
+- `_parse_ws_json` and `_ws_sub` detect TR error frames
+  (`<id> E <body>`) and raise the right typed exception rather than
+  silently returning `{}` (which previously made session-expired
+  responses look like "no data").
+- `TRClient.open_session()` accepts `auto_reconnect=` and
+  `on_reconnect=` and forwards the client's `on_waf_expired` /
+  `on_session_expired` hooks to the new session.
+
+### Fixed
+- PEA savings-plan and manual PEA trades no longer lose the inbound
+  cash leg. See "Changed" above for the data-shape implication.
+- Session-expired WS frames during `fetch_transactions` are now
+  raised as `SessionExpired` instead of being silently swallowed and
+  reported as "no transactions".
+- A coroutine-returning `on_waf_expired` used on the sync REST path
+  no longer deadlocks — it raises a clear `TRError` instructing the
+  caller to provide a sync callback.
+
+### Notes for libtrsync consumers
+- Downstream code that catches `TRAuthError` continues to work
+  unchanged (both new lifecycle exceptions inherit from it). Code
+  that wants to distinguish the recovery paths should catch the
+  specific subclasses.
+- Consumers of `dual_legged` who relied on the old PEA-merged output
+  may need to update their import / dedup logic to handle the
+  TRANSFER row that now accompanies each PEA savings-plan PURCHASE.
+
 ## [0.2.0] — 2026-05-25
 
 First useful release. Pulls the initial 0.1.0 tag forward with a real
@@ -70,6 +176,7 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.1.0

@@ -1,0 +1,126 @@
+{
+  "id": "6a3ec527-7680-4a7f-9235-6ecef0edd81d",
+  "timestamp": "2026-05-25T08:59:17.850+0000",
+  "title": "Crédit Agricole",
+  "icon": "logos/FR0000045072/v2",
+  "avatar": {
+    "asset": "logos/FR0000045072/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "PEA",
+  "amount": {
+    "currency": "EUR",
+    "value": -10.23,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "6a3ec527-7680-4a7f-9235-6ecef0edd81d"
+  },
+  "cashAccountNumber": "0000000000",
+  "hidden": false,
+  "deleted": false,
+  "eventType": "PEA_SAVINGS_PLAN_PAY_IN",
+  "_detail": {
+    "isin": "FR0000045072",
+    "asset_name": "Crédit Agricole",
+    "account": "Plan Épargne en Actions",
+    "portfolio": null,
+    "order_type": "Plan d'épargne",
+    "quantity": null,
+    "unit_price": null,
+    "total": null,
+    "fees": null,
+    "fees_currency": null,
+    "taxes": null,
+    "taxes_currency": null,
+    "dividend_per_share": null,
+    "dividend_currency": null,
+    "sender": null,
+    "iban": null,
+    "event_description": "Vous avez épargné 10.23 € avec votre PEA",
+    "currency": null,
+    "document_urls": []
+  },
+  "_detail_raw": {
+    "id": "6a3ec527-7680-4a7f-9235-6ecef0edd81d",
+    "sections": [
+      {
+        "title": "Vous avez épargné 10.23 € avec votre PEA",
+        "data": {
+          "icon": {
+            "asset": "logos/FR0000045072/v2",
+            "badge": null
+          },
+          "timestamp": "2026-05-25T08:59:17.85071Z",
+          "status": "executed"
+        },
+        "action": {
+          "payload": "FR0000045072",
+          "type": "instrumentDetail"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Compte",
+            "detail": {
+              "text": "Plan Épargne en Actions",
+              "displayValue": {
+                "text": "Plan Épargne en Actions"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Statut",
+            "detail": {
+              "text": "Fait",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Paiement",
+            "detail": {
+              "text": "Espèces",
+              "icon": "logos/bank_traderepublic/v2",
+              "type": "iconWithText"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Type d'ordre",
+            "detail": {
+              "text": "Plan d'épargne",
+              "displayValue": {
+                "text": "Plan d'épargne"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Actif",
+            "detail": {
+              "text": "Crédit Agricole",
+              "displayValue": {
+                "text": "Crédit Agricole"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}

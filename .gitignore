@@ -28,6 +28,9 @@ htmlcov/
 .testconfig
 .libtrsync
 tests/out/
+examples/out/
+examples/out_redacted/
+
 
 # Editor / OS
 .idea/

@@ -287,6 +287,53 @@ src/traderepublic_sync/
     └── mapping.py
 ```
 
+## Reporting bugs
+
+The TR API is undocumented and locale-sensitive — the most useful thing
+you can attach to a bug report is a redacted copy of your own dump, so we
+can reproduce the parsing path that misbehaved. Two scripts make this
+safe:
+
+1. **Dump everything** with `examples/smoke_fetch_all.py` — writes
+   `accounts.json`, `assets.json`, `transactions_raw.json` and
+   `transactions_dl.json` under `examples/out/`. The raw file contains
+   the full TR responses (`_detail` + `_detail_raw`) which is what we
+   need for parser fixes.
+2. **Anonymize** the whole folder with `scripts/redact_dump.py` before
+   sharing. It keeps every item and preserves the data shape, but:
+   - replaces ``sender`` / ``iban`` / ``holderName`` / ``email`` /
+     ``phone`` field values wholesale,
+   - regex-scrubs IBANs, JWTs, emails, phone numbers, AWS pre-signed
+     URL query strings, and any 10+ digit run,
+   - maps TR cash account numbers to consistent placeholders
+     (``9000000001``, ``9000000002``, …) so cross-file references still
+     match,
+   - takes ``--also-redact "<string>"`` for anything the regexes can't
+     infer (your real name and its variants, account labels, etc.).
+     Matched case-insensitively. Repeat the flag per term.
+
+   ```bash
+   # Default in/out: examples/out/ → examples/out_redacted/
+   python scripts/redact_dump.py \
+       --also-redact "Jane Doe" \
+       --also-redact "Jane-Doe" \
+       --also-redact "DOE-J"
+   ```
+
+   The script prints a per-rule hit count and the cash-account-number
+   mapping at the end. **Open the redacted JSONs and search for any
+   remaining real names, IBAN fragments, or labels** — name variants
+   (truncations, capitalizations, hyphenations) are the classic blind
+   spot. Re-run with extra ``--also-redact`` flags until clean.
+
+3. **Open an issue** on
+   [github.com/hdecreis/libtrsync](https://github.com/hdecreis/libtrsync/issues)
+   describing what you expected vs. what happened, and attach the
+   relevant file(s) from `examples/out_redacted/`. A single offending
+   `eventType` is often enough — pulling one item with
+   `scripts/extract_fixture.py` (which also sanitizes) lets us turn it
+   straight into a regression test.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -155,37 +155,116 @@ def test_determine_account_pea_detection():
 
 # ── deduplicate_pea ─────────────────────────────────────────────────────────
 
-def test_deduplicate_pea_keeps_richer_event():
-    """When a PEA mirror pair appears for the same date+ISIN, the one with
-    quantity/unit_price wins, but the PEA account name is preserved."""
-    rich = {
-        "date": "2026-05-18",
-        "asset_isin": "FR0000120073",
-        "quantity": 2.0,
-        "unit_price": 100.0,
-        "tr_event_type": "SAVINGS_PLAN_INVOICE_CREATED",
-        "account_name": "Trade Republic CTO",
+def test_deduplicate_pea_keeps_pay_in_and_purchase_as_distinct():
+    """PEA_SAVINGS_PLAN_PAY_IN is a TRANSFER, not a PURCHASE — dedup must
+    keep both events because they represent two real cash movements:
+    (1) cash arriving in PEA, (2) the purchase that consumes PEA cash."""
+    purchase = {
+        "date": "2026-05-25",
+        "asset_isin": "FR0000045072",
+        "transaction_type": "PURCHASE",
+        "debit_amount": 17.63,
+        "quantity": 1.0,
+        "unit_price": 17.555,
+        "tr_event_type": "TRADING_SAVINGSPLAN_EXECUTED",
+        "account_name": "Trade Republic PEA",
         "account_type": "BROKERAGE",
     }
-    pea_mirror = {
-        "date": "2026-05-18",
-        "asset_isin": "FR0000120073",
-        "quantity": None,
-        "unit_price": None,
+    pay_in = {
+        "date": "2026-05-25",
+        "asset_isin": "FR0000045072",
+        "transaction_type": "TRANSFER",
+        "credit_amount": 10.23,
+        "debit_amount": 10.23,
         "tr_event_type": "PEA_SAVINGS_PLAN_PAY_IN",
         "account_name": "Trade Republic PEA",
         "account_type": "BROKERAGE",
     }
-    result = deduplicate_pea([rich, pea_mirror])
+    result = deduplicate_pea([purchase, pay_in])
+    assert len(result) == 2
+    types = {t["transaction_type"] for t in result}
+    assert types == {"PURCHASE", "TRANSFER"}
+
+
+def test_deduplicate_pea_collapses_true_duplicates():
+    """If TR ever emits two truly identical events (same type, date, ISIN,
+    amount), the richer one wins. This is the only case dedup still acts
+    on after the PEA reclassification."""
+    poor = {
+        "date": "2026-05-18",
+        "asset_isin": "X",
+        "transaction_type": "PURCHASE",
+        "debit_amount": 100.0,
+        "tr_event_type": "TRADING_TRADE_EXECUTED",
+    }
+    rich = {
+        "date": "2026-05-18",
+        "asset_isin": "X",
+        "transaction_type": "PURCHASE",
+        "debit_amount": 100.0,
+        "quantity": 2.0,
+        "unit_price": 50.0,
+        "tr_event_type": "TRADING_TRADE_EXECUTED",
+    }
+    result = deduplicate_pea([poor, rich])
     assert len(result) == 1
-    assert result[0]["quantity"] == 2.0           # richer event kept
-    assert result[0]["account_name"] == "Trade Republic PEA"  # PEA name promoted
+    assert result[0]["quantity"] == 2.0
 
 
-def test_deduplicate_pea_no_op_without_mirror():
-    """If no PEA mirror is present, the function should not collapse."""
+def test_deduplicate_pea_no_op_when_amounts_differ():
+    """Two events of the same type but different amounts are NOT duplicates
+    — this is the user's scenario (10.23 pay-in + 17.63 trade happen to
+    share date/ISIN but are independent movements). Reproduced here at the
+    PURCHASE level to keep the assertion focused on the dedup key."""
     txs = [
-        {"date": "2026-05-18", "asset_isin": "X", "tr_event_type": "TRADING_TRADE_EXECUTED"},
-        {"date": "2026-05-18", "asset_isin": "X", "tr_event_type": "TRADING_TRADE_EXECUTED"},
+        {
+            "date": "2026-05-18", "asset_isin": "X",
+            "transaction_type": "PURCHASE", "debit_amount": 100.0,
+            "tr_event_type": "TRADING_TRADE_EXECUTED",
+        },
+        {
+            "date": "2026-05-18", "asset_isin": "X",
+            "transaction_type": "PURCHASE", "debit_amount": 50.0,
+            "tr_event_type": "TRADING_TRADE_EXECUTED",
+        },
     ]
     assert len(deduplicate_pea(txs)) == 2
+
+
+# ── End-to-end: the user's exact case ──────────────────────────────────────
+
+def test_user_case_pay_in_and_purchase_kept_separately():
+    """The original report: TRADING_SAVINGSPLAN_EXECUTED (17.63 €, full
+    trade) + PEA_SAVINGS_PLAN_PAY_IN (10.23 €, top-up of PEA cash) must
+    end up as two distinct dual-legged transactions, with the cash flow
+    inferable from the consumer's account mapping."""
+    pay_in_tx = build("pea_pay_in")
+    purchase_tx = build("pea_purchase")
+
+    # Pay-in: TRANSFER with both legs set so consumers can map credit→PEA
+    # and debit→external/CTO without further guessing.
+    assert pay_in_tx["transaction_type"] == "TRANSFER"
+    assert pay_in_tx["credit_amount"] == pytest.approx(10.23)
+    assert pay_in_tx["debit_amount"] == pytest.approx(10.23)
+    assert pay_in_tx["credit_asset_code"] == "EUR"
+    assert pay_in_tx["debit_asset_code"] == "EUR"
+    assert pay_in_tx["account_name"] == "Trade Republic PEA"
+
+    # Trade: PURCHASE for the full 17.63 € (PEA residual + pay-in).
+    # The EXECUTED event has no PEA marker in its detail — TR only carries
+    # the trading-sub-account cashAccountNumber, so the library falls back
+    # to that. Mapping that number to "PEA" is the consumer's job.
+    assert purchase_tx["transaction_type"] == "PURCHASE"
+    assert purchase_tx["debit_amount"] == pytest.approx(17.63)
+    assert purchase_tx["quantity"] == pytest.approx(1.0)
+    assert purchase_tx["unit_price"] == pytest.approx(17.555)
+    assert purchase_tx["credit_asset_code"] == "FR0000045072"  # the share
+    assert purchase_tx["tr_cash_account"] == "0000000001"
+    assert "Trade Republic" in purchase_tx["account_name"]
+
+    # Dedup must keep both — they are not the same operation.
+    result = deduplicate_pea([purchase_tx, pay_in_tx])
+    assert len(result) == 2
+    by_type = {t["transaction_type"]: t for t in result}
+    assert by_type["TRANSFER"]["debit_amount"] == pytest.approx(10.23)
+    assert by_type["PURCHASE"]["debit_amount"] == pytest.approx(17.63)

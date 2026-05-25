@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 from dataclasses import asdict
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -20,12 +21,12 @@ from traderepublic_sync import ConnectionState, TRClient, TRAuthError
 
 config_path = Path(
     os.environ.get("LIBTRSYNC_TESTCONFIG")
-    or Path.Home() / ".config/libtrsync/testconfig.json"
+    or Path.home() / ".config/libtrsync/testconfig.json"
 )
 
 session_path = Path(
     os.environ.get("LIBTRSYNC_SESSION")
-    or Path.Home() / ".config/libtrsync/session.json"
+    or Path.home() / ".config/libtrsync/session.json"
 )
 
 

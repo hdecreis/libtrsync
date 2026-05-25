@@ -14,7 +14,6 @@ from ..parsing import extract_isin_from_icon, normalize_tr_id
 
 EVENT_TYPE_MAP = {
     "TRADING_SAVINGSPLAN_EXECUTED":       "PURCHASE",
-    "PEA_SAVINGS_PLAN_PAY_IN":            "PURCHASE",
     "SAVINGS_PLAN_INVOICE_CREATED":       "PURCHASE",
     "PRIVATE_MARKET_FUND_TRADE_EXECUTED": "PURCHASE",
     "SPARE_CHANGE_AGGREGATE":             "PURCHASE",
@@ -28,13 +27,26 @@ EVENT_TYPE_MAP = {
     "PAYMENT_INBOUND_CREDIT_CARD": "TRANSFER",
     "PAYMENT_INBOUND_GOOGLE_PAY":  "TRANSFER",
 
+    # PEA top-up events: cash arriving in the PEA cash account to fund a
+    # purchase. These are NOT duplicates of the trade event — the trade
+    # debits PEA cash for its full price (possibly > the pay-in amount when
+    # PEA cash had a residual). See deduplicate_pea() for the historical
+    # context behind this classification.
+    "PEA_SAVINGS_PLAN_PAY_IN": "TRANSFER",
+    "PEA_DEPOSIT_DEBIT":       "TRANSFER",
+
     "CARD_TRANSACTION": "EXPENSE",
     "CARD_ORDER_FEE":   "FEE",
 
     "TRADE_INVOICE":          None,
     "TRADING_TRADE_EXECUTED": None,
-    "PEA_DEPOSIT_DEBIT":      None,
 }
+
+# Event types that represent a cash top-up INTO a TR sub-account (PEA cash)
+# rather than a movement to/from an external bank. For these we know the
+# direction even though the amount sign is the same user-centric "negative"
+# as a regular outbound transfer.
+_PEA_INBOUND_TRANSFER_EVENTS = {"PEA_SAVINGS_PLAN_PAY_IN", "PEA_DEPOSIT_DEBIT"}
 
 
 def determine_account(main_item, parsed_detail):
@@ -159,7 +171,17 @@ def build_dual_legged_transaction(main_item, parsed_detail):
         tx["credit_amount"] = total
 
     elif tx_type == "TRANSFER":
-        if (main_item.get("amount") or {}).get("value", 0) >= 0:
+        if event_type in _PEA_INBOUND_TRANSFER_EVENTS:
+            # PEA top-up: money arriving in the PEA cash account from the
+            # user's external bank (or CTO). TR signs the amount negatively
+            # (user-centric "cash spent on PEA") so we ignore the sign and
+            # set both legs — the consumer routes ``credit_account`` to PEA
+            # cash and ``debit_account`` to the external/CTO source.
+            tx["credit_asset_code"] = currency
+            tx["credit_amount"] = total
+            tx["debit_asset_code"] = currency
+            tx["debit_amount"] = total
+        elif (main_item.get("amount") or {}).get("value", 0) >= 0:
             tx["credit_asset_code"] = currency
             tx["credit_amount"] = total
         else:
@@ -200,47 +222,79 @@ def build_dual_legged_transaction(main_item, parsed_detail):
 
 
 def deduplicate_pea(transactions):
-    """Deduplicate PEA mirror event pairs, keeping the one with most detail."""
-    PEA_MIRROR_TYPES = {"PEA_SAVINGS_PLAN_PAY_IN", "PEA_DEPOSIT_DEBIT"}
+    """Drop only true intra-page duplicates.
 
-    by_key = {}
-    for tx in transactions:
-        isin = tx.get("asset_isin")
-        if not isin:
-            by_key[id(tx)] = [tx]
-            continue
-        key = (tx.get("date", "")[:10], isin)
-        if key not in by_key:
-            by_key[key] = []
-        by_key[key].append(tx)
+    History: an earlier version of this function merged ``PEA_SAVINGS_PLAN_PAY_IN``
+    (or ``PEA_DEPOSIT_DEBIT``) into the matching ``TRADING_SAVINGSPLAN_EXECUTED``
+    on the assumption that the pay-in was a redundant mirror of the trade.
+    That was wrong: the pay-in is the **transfer** that funds the trade,
+    and when the PEA cash account already holds a residual balance the
+    pay-in amount can be smaller than the trade amount (e.g. 10.23 € paid
+    in + 7.40 € residual → 17.63 € trade). Collapsing them silently lost
+    that cash flow.
 
-    result = []
-    for key, group in by_key.items():
-        if len(group) == 1:
-            result.append(group[0])
-            continue
-
-        has_pea_mirror = any(
-            (t.get("tr_event_type") or "") in PEA_MIRROR_TYPES for t in group
+    With ``PEA_SAVINGS_PLAN_PAY_IN`` and ``PEA_DEPOSIT_DEBIT`` now mapped
+    to ``TRANSFER`` (see ``EVENT_TYPE_MAP``), the two events are distinct
+    transaction types and are kept side by side. This function is retained
+    in the public API and now only collapses the rare case where TR emits
+    two events of the **same** dual-legged type, on the same date+ISIN,
+    with the same primary amount — usually a TR-side glitch. The richer
+    one (with quantity/unit_price filled in) wins.
+    """
+    def _key(tx):
+        return (
+            tx.get("date", "")[:10],
+            tx.get("asset_isin"),
+            tx.get("transaction_type"),
+            _primary_amount(tx),
         )
-        if not has_pea_mirror:
-            result.extend(group)
-            continue
 
+    by_key: dict[tuple, list[dict]] = {}
+    out_order: list[tuple] = []
+    standalone: list[dict] = []
+
+    for tx in transactions:
+        if not tx.get("asset_isin"):
+            standalone.append(tx)
+            continue
+        k = _key(tx)
+        if k not in by_key:
+            by_key[k] = []
+            out_order.append(k)
+        by_key[k].append(tx)
+
+    deduped: list[dict] = []
+    for k in out_order:
+        group = by_key[k]
+        if len(group) == 1:
+            deduped.append(group[0])
+            continue
+        # True duplicate: keep the entry with the most detail filled in.
         best = max(
             group,
             key=lambda t: (
                 1 if t.get("quantity") else 0,
                 1 if t.get("unit_price") else 0,
-                0 if (t.get("tr_event_type") or "") in PEA_MIRROR_TYPES else 1,
+                1 if t.get("fee_amount") else 0,
+                1 if t.get("tax_amount") else 0,
             ),
         )
-        pea_tx = next(
-            (t for t in group if (t.get("tr_event_type") or "") in PEA_MIRROR_TYPES),
-            None,
-        )
-        if pea_tx and "PEA" in (pea_tx.get("account_name") or ""):
-            best["account_name"] = pea_tx["account_name"]
-            best["account_type"] = pea_tx["account_type"]
-        result.append(best)
-    return result
+        deduped.append(best)
+
+    # Preserve original ordering: standalone (no ISIN) items pass through
+    # in input order at the end, matching the previous behavior.
+    return deduped + standalone
+
+
+def _primary_amount(tx):
+    """Return the side of the tx that represents the primary money flow.
+
+    Used as part of the dedup key so two events with the same dual-legged
+    type but different amounts (e.g. partial cash + savings plan top-up)
+    are NOT merged.
+    """
+    for key in ("credit_amount", "debit_amount"):
+        v = tx.get(key)
+        if isinstance(v, (int, float)) and v:
+            return round(float(v), 2)
+    return None
