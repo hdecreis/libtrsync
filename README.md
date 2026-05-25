@@ -1,5 +1,7 @@
 # traderepublic-sync
 
+[![CI](https://github.com/hdecreis/libtrsync/actions/workflows/ci.yml/badge.svg)](https://github.com/hdecreis/libtrsync/actions/workflows/ci.yml)
+
 Unofficial Python client for **Trade Republic**. Handles AWS WAF token
 acquisition, phone+PIN login with 2FA, WebSocket data fetching, and parsing
 of the timeline-detail responses into structured Python dicts.
@@ -108,6 +110,111 @@ tx = build_dual_legged_transaction(raw_item, parsed_detail)
 under `"transactions"` (dual-legged) and `"raw_items"` (raw TR items with the
 parsed detail attached as `_detail` / `_detail_raw`).
 
+## Live subscriptions (TRSession)
+
+`TRClient` exposes one-shot helpers (`fetch_transactions`, `fetch_cash_balance`,
+`fetch_ticker`, …) that open a WebSocket, send a single request, and close.
+For **streaming** use cases — live ticker, live portfolio updates, instrument
+search — open a long-lived session via `client.open_session()`.
+
+```python
+import asyncio
+from traderepublic_sync import TRClient
+
+client = TRClient(waf_token=..., device_info=...)
+# ...login + verify_2fa as in the quickstart...
+
+async def watch_apple():
+    async with client.open_session(session_token) as session:
+        def on_tick(data):
+            last = (data.get("last") or {}).get("price")
+            print(f"AAPL = {last}")
+
+        sub_id = await session.subscribe_ticker("US0378331005", on_tick)
+        await asyncio.sleep(60)            # stream for a minute
+        await session.unsubscribe(sub_id)  # optional — __aexit__ also cleans up
+
+asyncio.run(watch_apple())
+```
+
+### Convenience subscriptions
+
+| Method | What it streams |
+|---|---|
+| `subscribe_ticker(isin, cb)` | Live price (`last`, `bid`, `ask`, `open`, `pre`) — resolves the home exchange for you |
+| `subscribe_portfolio(sec_acc_no, cb)` | Live positions list (quantity + cost basis) |
+| `subscribe_cash(cash_acc_no, cb)` | Available cash balance |
+| `subscribe_transactions(cash_acc_no, cb)` | Timeline transactions as they appear |
+
+All callbacks may be plain functions or coroutines. They receive the parsed
+JSON payload of each incoming frame; errors in the callback are logged and
+swallowed so one bad frame doesn't kill the stream.
+
+### Searching for instruments (securities)
+
+`search_instrument(query, instrument_type=None, limit=20)` queries TR's
+`neonSearch` endpoint — the same one the web app uses for the asset
+picker. It accepts a free-text query (name, ticker, ISIN fragment) and
+returns the raw result list.
+
+```python
+async with client.open_session(session_token) as session:
+    # By asset class
+    btc     = await session.search_instrument("bitcoin", instrument_type="crypto")
+    apple   = await session.search_instrument("apple",   instrument_type="stock")
+    msci    = await session.search_instrument("MSCI World", instrument_type="etf")
+
+    # Without a type filter, results span all asset classes
+    mixed   = await session.search_instrument("tesla", limit=5)
+
+    # By ISIN (or fragment)
+    by_isin = await session.search_instrument("US0378331005")
+```
+
+**Parameters**
+
+| Name | Type | Notes |
+|---|---|---|
+| `query` | `str` | Free-text search — name, ticker, partial ISIN |
+| `instrument_type` | `str \| None` | One of `"crypto"`, `"stock"`, `"etf"`, `"bond"`, `"derivative"`, `"fund"` — or `None` to search everything |
+| `limit` | `int` | Max results (default `20`) |
+
+**Result shape** — each item is a raw TR dict, typically including:
+
+```python
+{
+    "isin": "XF000BTC0017",         # ISIN or pseudo-ISIN for crypto
+    "name": "Bitcoin",
+    "type": "crypto",
+    "exchanges": [{"slug": "BTC", "name": "Bitcoin"}],
+    # ...additional fields vary by asset class
+}
+```
+
+Use the returned `isin` to feed `subscribe_ticker()`, `fetch_ticker()`,
+or any other instrument-keyed API on the client.
+
+### Lower-level primitives
+
+If a TR subscription type isn't covered by the convenience helpers, use
+`subscribe()` / `request()` directly:
+
+```python
+async with client.open_session(session_token) as session:
+    # One-shot: subscribe, take the first frame, unsubscribe.
+    data = await session.request("availableCash", {"id": cash_acc_no})
+
+    # Streaming: keep receiving until you unsubscribe.
+    sub_id = await session.subscribe(
+        "compactPortfolio",
+        {"secAccNo": sec_acc_no},
+        callback=lambda d: print(d["positions"]),
+    )
+```
+
+The WebSocket token is injected for you; you don't need to pass it in
+`params`.
+
 ## Downloading files listed in transactions
 
 The key points:
@@ -169,7 +276,8 @@ from traderepublic_sync import (
 
 ```
 src/traderepublic_sync/
-├── client.py       # TRClient (login, 2FA, websocket fetch)
+├── client.py       # TRClient (login, 2FA, one-shot websocket fetches)
+├── session.py      # TRSession (long-lived ws, callback-based subscriptions)
 ├── waf.py          # AWS WAF token via Playwright or Selenium
 ├── parsing.py      # parse_currency_amount, parse_detail_sections, ISIN extraction
 ├── state.py        # ConnectionState dataclass
