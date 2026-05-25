@@ -1,0 +1,247 @@
+{
+  "id": "adccf704-a51d-4646-8096-eaae56147571",
+  "timestamp": "2026-05-18T09:47:00.107+0000",
+  "title": "M JOHN DOE",
+  "icon": "logos/contacts-M-Grey/v2",
+  "avatar": {
+    "asset": "logos/contacts-M-Grey/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "Terminé",
+  "amount": {
+    "currency": "EUR",
+    "value": 200.0,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "adccf704-a51d-4646-8096-eaae56147571"
+  },
+  "cashAccountNumber": "1234567890",
+  "hidden": false,
+  "deleted": false,
+  "eventType": "BANK_TRANSACTION_INCOMING",
+  "_detail": {
+    "isin": null,
+    "asset_name": null,
+    "account": null,
+    "portfolio": null,
+    "order_type": null,
+    "quantity": null,
+    "unit_price": null,
+    "total": 200.0,
+    "fees": null,
+    "fees_currency": null,
+    "taxes": null,
+    "taxes_currency": null,
+    "dividend_per_share": null,
+    "dividend_currency": null,
+    "sender": "M JOHN DOE",
+    "iban": "..0000",
+    "event_description": "Vous avez reçu 200,00 € de M JOHN DOE",
+    "currency": null,
+    "document_urls": []
+  },
+  "_detail_raw": {
+    "id": "adccf704-a51d-4646-8096-eaae56147571",
+    "sections": [
+      {
+        "title": "Vous avez reçu 200,00 € de M JOHN DOE",
+        "data": {
+          "icon": {
+            "asset": "logos/contacts-M-Grey/v2",
+            "badge": null
+          },
+          "timestamp": "2026-05-18T09:46:50.344616Z",
+          "status": "executed"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Virement",
+            "detail": {
+              "text": "Finalisé",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Expéditeur",
+            "detail": {
+              "text": "M JOHN DOE",
+              "displayValue": {
+                "text": "M JOHN DOE"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "IBAN",
+            "detail": {
+              "text": "..0000",
+              "action": {
+                "payload": {
+                  "id": "adccf704-a51d-4646-8096-eaae56147571",
+                  "sections": [
+                    {
+                      "title": "IBAN",
+                      "data": [
+                        {
+                          "title": "FR7600000000000000000000000",
+                          "detail": {
+                            "icon": "logos/bank_boursorama/v2",
+                            "style": "highlighted",
+                            "type": "listItemAvatarDefault"
+                          },
+                          "style": "plain"
+                        }
+                      ],
+                      "type": "table"
+                    }
+                  ]
+                },
+                "displayMode": "bottomSheet",
+                "type": "infoPage"
+              },
+              "displayValue": {
+                "text": "..0000"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Total",
+            "detail": {
+              "text": "+200,00 €",
+              "displayValue": {
+                "text": "+200,00 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "data": {
+          "text": "Virement depuis BoursoBank"
+        },
+        "type": "note"
+      },
+      {
+        "title": "Statut",
+        "steps": [
+          {
+            "leading": {
+              "avatar": {
+                "status": "completed",
+                "type": "bullet"
+              },
+              "connection": {
+                "order": "first"
+              }
+            },
+            "content": {
+              "title": "Virement reçu",
+              "timestamp": "2026-05-18T09:10:35.565508Z"
+            }
+          },
+          {
+            "leading": {
+              "avatar": {
+                "status": "completed",
+                "type": "bullet"
+              },
+              "connection": {
+                "order": "middle"
+              }
+            },
+            "content": {
+              "title": "Virement traité",
+              "timestamp": "2026-05-18T09:46:50.34263Z"
+            }
+          },
+          {
+            "leading": {
+              "avatar": {
+                "status": "completed",
+                "type": "bullet"
+              },
+              "connection": {
+                "order": "last"
+              }
+            },
+            "content": {
+              "title": "Virement reçu sur votre compte",
+              "timestamp": "2026-05-18T09:46:50.344616Z"
+            }
+          }
+        ],
+        "type": "steps"
+      },
+      {
+        "title": "Document",
+        "data": [
+          {
+            "title": "Transaction confirmation",
+            "action": {
+              "payload": {
+                "path": "/api/v1/payments/documents/incoming-transfer/adccf704-a51d-4646-8096-eaae56147571",
+                "title": "Transaction confirmation",
+                "shareable": true
+              },
+              "type": "authenticatedBrowserModal"
+            },
+            "id": "adccf704-a51d-4646-8096-eaae56147571",
+            "postboxType": "INCOMING_TRANSFER"
+          }
+        ],
+        "type": "documents"
+      },
+      {
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "leading": {
+                "type": "avatar",
+                "icon": "logos/timeline_communication/v2"
+              },
+              "content": {
+                "type": "default",
+                "title": "Signaler un problème"
+              },
+              "trailing": {
+                "type": "chevron"
+              },
+              "action": {
+                "payload": {
+                  "contextCategory": "NHC",
+                  "contextParams": {
+                    "chat_flow_key": "NHC_0024_deposit_report_an_issue",
+                    "transferId": "1a298e0e-bdcd-4f30-9cef-0ef9c43077ed",
+                    "timelineEventId": "adccf704-a51d-4646-8096-eaae56147571"
+                  }
+                },
+                "type": "customerSupportChat"
+              },
+              "type": "listItem"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}

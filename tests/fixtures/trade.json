@@ -1,0 +1,265 @@
+{
+  "id": "5b75551f-09cc-48b4-85d8-29a0d417537e",
+  "timestamp": "2026-05-14T13:01:50.299+0000",
+  "title": "Hermes",
+  "icon": "logos/FR0000052292/v2",
+  "avatar": {
+    "asset": "logos/FR0000052292/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "Ordre d'achat",
+  "amount": {
+    "currency": "EUR",
+    "value": -1603.38,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "5b75551f-09cc-48b4-85d8-29a0d417537e"
+  },
+  "cashAccountNumber": "1234567890",
+  "hidden": false,
+  "deleted": false,
+  "eventType": "TRADING_TRADE_EXECUTED",
+  "_detail": {
+    "isin": "FR0000052292",
+    "asset_name": "Hermes",
+    "account": null,
+    "portfolio": "PEA",
+    "order_type": null,
+    "quantity": 1.0,
+    "unit_price": 1596.0,
+    "total": 1603.38,
+    "fees": 1.0,
+    "fees_currency": "EUR",
+    "taxes": 6.38,
+    "taxes_currency": "EUR",
+    "dividend_per_share": null,
+    "dividend_currency": null,
+    "sender": null,
+    "iban": null,
+    "event_description": "Vous avez investi 1 603,38 €",
+    "currency": null,
+    "document_urls": [
+      {
+        "title": "Facturation",
+        "url": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/14/0eb27392/pb1778763710862442896510727570.pdf?REDACTED"
+      },
+      {
+        "title": "Informations sur les coûts",
+        "url": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/14/0eb27392/pb177876371044025065948173479.pdf?REDACTED"
+      }
+    ]
+  },
+  "_detail_raw": {
+    "id": "5b75551f-09cc-48b4-85d8-29a0d417537e",
+    "sections": [
+      {
+        "title": "Vous avez investi 1 603,38 €",
+        "data": {
+          "icon": {
+            "asset": "logos/FR0000052292/v2",
+            "badge": null
+          },
+          "timestamp": "2026-05-14T13:01:50.29992Z",
+          "status": "executed"
+        },
+        "action": {
+          "payload": "FR0000052292",
+          "type": "instrumentDetail"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Acheter",
+            "detail": {
+              "text": "Exécuté",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Portefeuille",
+            "detail": {
+              "text": "PEA",
+              "displayValue": {
+                "text": "PEA"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Actif",
+            "detail": {
+              "text": "Hermes",
+              "displayValue": {
+                "text": "Hermes"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Transaction",
+            "detail": {
+              "text": "1 ×  1 596,00 €",
+              "action": {
+                "payload": {
+                  "id": "00000000-0000-0000-0000-1234567890",
+                  "sections": [
+                    {
+                      "title": "Transaction",
+                      "type": "title"
+                    },
+                    {
+                      "data": [
+                        {
+                          "title": "Prix du titre",
+                          "detail": {
+                            "text": "1 596,00 €",
+                            "displayValue": {
+                              "text": "1 596,00 €"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "Actions",
+                          "detail": {
+                            "text": "1",
+                            "displayValue": {
+                              "text": "1"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "Total",
+                          "detail": {
+                            "text": "1 596,00 €",
+                            "displayValue": {
+                              "text": "1 596,00 €"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        }
+                      ],
+                      "type": "table"
+                    }
+                  ]
+                },
+                "displayMode": "bottomSheet",
+                "type": "infoPage"
+              },
+              "displayValue": {
+                "text": "1 596,00 €",
+                "prefix": "1 × "
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Impôts",
+            "detail": {
+              "text": "6,38 €",
+              "displayValue": {
+                "text": "6,38 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Frais",
+            "detail": {
+              "text": "1,00 €",
+              "displayValue": {
+                "text": "1,00 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Total",
+            "detail": {
+              "text": "1 603,38 €",
+              "displayValue": {
+                "text": "1 603,38 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Documents",
+        "data": [
+          {
+            "title": "Facturation",
+            "action": {
+              "payload": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/14/0eb27392/pb1778763710862442896510727570.pdf?REDACTED",
+              "type": "browserModal"
+            },
+            "id": "e8c10f8b-b546-42a7-b1e3-88745e793de3",
+            "postboxType": "SECURITIES_SETTLEMENT"
+          },
+          {
+            "title": "Informations sur les coûts",
+            "action": {
+              "payload": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/14/0eb27392/pb177876371044025065948173479.pdf?REDACTED",
+              "type": "browserModal"
+            },
+            "id": "8330c6c9-eaad-41d6-83f7-158f86864d84",
+            "postboxType": "EQUITIES_BUY_EX_ANTE"
+          }
+        ],
+        "type": "documents"
+      },
+      {
+        "title": "",
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "icon": "",
+              "action": {
+                "payload": {
+                  "contextCategory": "NHC",
+                  "contextParams": {
+                    "chat_flow_key": "NHC_0029_wealth_buying_selling_past_trade_execution",
+                    "customerSupportChatVisible": "false",
+                    "timelineEventId": "5b75551f-09cc-48b4-85d8-29a0d417537e",
+                    "instrumentType": "stock",
+                    "instrumentId": "FR0000052292",
+                    "tradeId": "1628ddc2-46ee-4b89-a8f3-9e846eaf72d4",
+                    "primId": "N1774347841"
+                  }
+                },
+                "type": "customerSupportChat"
+              },
+              "style": "highlighted",
+              "type": "listItemAvatarDefault"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "id": "5b036c48-e1b3-514c-9ae0-bf8b37677af6",
+  "timestamp": "2024-06-29T13:42:41.689+0000",
+  "title": "Smile&P*LA CAVE DU CHAT",
+  "icon": "logos/merchant-fallback-groceries/v2",
+  "avatar": {
+    "asset": "logos/merchant-fallback-groceries/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": null,
+  "amount": {
+    "currency": "EUR",
+    "value": -4.9,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "5b036c48-e1b3-514c-9ae0-bf8b37677af6"
+  },
+  "cashAccountNumber": null,
+  "hidden": false,
+  "deleted": false,
+  "eventType": "CARD_TRANSACTION",
+  "_detail": {
+    "isin": null,
+    "asset_name": null,
+    "account": null,
+    "portfolio": null,
+    "order_type": null,
+    "quantity": null,
+    "unit_price": null,
+    "total": 4.9,
+    "fees": null,
+    "fees_currency": null,
+    "taxes": null,
+    "taxes_currency": null,
+    "dividend_per_share": null,
+    "dividend_currency": null,
+    "sender": null,
+    "iban": null,
+    "event_description": "Vous avez dépensé 4,90 €",
+    "currency": null,
+    "document_urls": []
+  },
+  "_detail_raw": {
+    "id": "5b036c48-e1b3-514c-9ae0-bf8b37677af6",
+    "sections": [
+      {
+        "title": "Vous avez dépensé 4,90 €",
+        "data": {
+          "icon": {
+            "asset": "logos/merchant-fallback-groceries/v2",
+            "badge": null
+          },
+          "timestamp": "2024-06-29T13:42:41.689Z",
+          "status": "executed"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Paiement par carte",
+            "detail": {
+              "text": "Terminé",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Payé avec",
+            "detail": {
+              "text": "Google Pay",
+              "icon": "logos/bank_googlepay/v2",
+              "action": {
+                "payload": {
+                  "id": "850e7618-377e-4043-8956-4ab387928223",
+                  "sections": [
+                    {
+                      "title": "Payé avec Google Pay",
+                      "type": "title"
+                    },
+                    {
+                      "data": [
+                        {
+                          "title": "Nom de l'appareil",
+                          "detail": {
+                            "text": "Google - Pixel 7 Pro",
+                            "displayValue": {
+                              "text": "Google - Pixel 7 Pro"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "Type d'appareil",
+                          "detail": {
+                            "text": "Téléphone ou tablette",
+                            "displayValue": {
+                              "text": "Téléphone ou tablette"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "Carte Google Pay",
+                          "detail": {
+                            "text": "··7892",
+                            "displayValue": {
+                              "text": "··7892"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        }
+                      ],
+                      "type": "table"
+                    },
+                    {
+                      "text": "Avec Google Pay, le commerçant reçoit un numéro de carte sécurisé spécifique à lappareil. Cest pourquoi les quatre derniers chiffres figurant sur les reçus peuvent différer de ceux de votre carte.",
+                      "style": "disclaimer",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "displayMode": "bottomSheet",
+                "type": "infoPage"
+              },
+              "type": "iconWithText"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Commerçant",
+            "detail": {
+              "text": "Smile&P*LA CAVE DU CHAT",
+              "displayValue": {
+                "text": "Smile&P*LA CAVE DU CHAT"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Total",
+            "detail": {
+              "text": "4,90 €",
+              "displayValue": {
+                "text": "4,90 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Avantages",
+        "data": [
+          {
+            "title": "Core Stoxx Europe 600 EUR (Acc)",
+            "detail": {
+              "title": "Core Stoxx Europe 600 EUR (Acc)",
+              "timestamp": "2024-06-29T13:42:42.667762Z",
+              "amount": "1,00 €",
+              "icon": {
+                "asset": "logos/LU0908500753/v2",
+                "badge": null
+              },
+              "status": "executed",
+              "action": {
+                "type": "benefitsRoundupOverview"
+              },
+              "subtitle": "Round up · 10×",
+              "type": "embeddedTimelineItem"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Documents",
+        "data": [
+          {
+            "title": "Reçu de transaction",
+            "action": {
+              "payload": {
+                "path": "api/v1/card/transactions/timelineDocuments/5b036c48-e1b3-514c-9ae0-bf8b37677af6",
+                "title": "Télécharger",
+                "shareable": true
+              },
+              "type": "authenticatedBrowserModal"
+            },
+            "id": "5b036c48-e1b3-514c-9ae0-bf8b37677af6",
+            "postboxType": ""
+          }
+        ],
+        "type": "documents"
+      },
+      {
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "content": {
+                "type": "default",
+                "title": "Signaler un problème",
+                "truncate": false
+              },
+              "action": {
+                "payload": {
+                  "contextCategory": "NHC",
+                  "contextParams": {
+                    "chat_flow_key": "nhc_nonlivesupport_parent_flow",
+                    "NHC_timelineEventId": "5b036c48-e1b3-514c-9ae0-bf8b37677af6"
+                  }
+                },
+                "type": "customerSupportChat"
+              },
+              "type": "listItem"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}

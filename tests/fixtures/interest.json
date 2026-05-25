@@ -1,0 +1,820 @@
+{
+  "id": "019de13f-acfc-7815-a47d-6e0b85b03131",
+  "timestamp": "2026-05-01T02:06:28.569+0000",
+  "title": "Intérêts",
+  "icon": "logos/timeline_interest_new/v2",
+  "avatar": {
+    "asset": "logos/timeline_interest_new/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "2 % p.a.",
+  "amount": {
+    "currency": "EUR",
+    "value": 0.62,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "019de13f-acfc-7815-a47d-6e0b85b03131"
+  },
+  "cashAccountNumber": "1234567890",
+  "hidden": false,
+  "deleted": false,
+  "eventType": "INTEREST_PAYOUT",
+  "_detail": {
+    "isin": null,
+    "asset_name": null,
+    "account": null,
+    "portfolio": null,
+    "order_type": null,
+    "quantity": null,
+    "unit_price": null,
+    "total": 0.62,
+    "fees": null,
+    "fees_currency": null,
+    "taxes": 0.29,
+    "taxes_currency": "EUR",
+    "dividend_per_share": null,
+    "dividend_currency": null,
+    "sender": null,
+    "iban": null,
+    "event_description": "Vous avez reçu 0,62 €",
+    "currency": null,
+    "document_urls": []
+  },
+  "_detail_raw": {
+    "id": "019de13f-acfc-7815-a47d-6e0b85b03131",
+    "sections": [
+      {
+        "title": "Vous avez reçu 0,62 €",
+        "data": {
+          "icon": {
+            "asset": "logos/timeline_interest_new/v2",
+            "badge": null
+          },
+          "timestamp": "2026-05-01T02:06:35.267516Z",
+          "status": "executed"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Intérêts",
+            "detail": {
+              "text": "Terminé",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Accumulé",
+            "detail": {
+              "text": "0,91 €",
+              "action": {
+                "payload": {
+                  "id": "00000000-0000-0000-0000-1234567890",
+                  "sections": [
+                    {
+                      "title": "Intérêts bruts quotidiens",
+                      "data": {
+                        "subtitleText": "avril 2026",
+                        "status": "executed"
+                      },
+                      "type": "header"
+                    },
+                    {
+                      "data": [
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-01"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 520,53 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-02"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 190,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,01 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-03"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 190,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,01 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-04"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 190,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,01 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-05"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 190,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,01 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-06"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 190,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,01 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-07"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 190,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,01 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-08"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 340,97 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,02 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-09"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 516,81 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-10"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 478,26 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-11"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 478,26 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-12"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 478,26 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-13"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 778,26 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-14"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 778,26 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-15"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 778,26 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-16"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 605,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-17"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 605,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-18"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 605,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-19"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 605,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,03 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-20"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 805,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-21"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 805,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-22"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 805,00 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-23"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-24"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-25"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-26"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-27"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-28"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-29"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "",
+                          "detail": {
+                            "leading": {
+                              "type": "date",
+                              "value": "2026-04-30"
+                            },
+                            "content": {
+                              "type": "default",
+                              "title": "solde 672,48 €",
+                              "subtitle": "2,00 % taux annuel"
+                            },
+                            "trailing": {
+                              "type": "value",
+                              "title": "+0,04 €",
+                              "titleColor": "default"
+                            },
+                            "type": "listItem"
+                          },
+                          "style": "plain"
+                        }
+                      ],
+                      "type": "table"
+                    },
+                    {
+                      "text": "Les intérêts que vous gagnez chaque jour sont égaux au solde de fin de journée de votre compte multiplié par le taux annuel et divisé par 365.",
+                      "style": "disclaimer",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "displayMode": "modal",
+                "type": "infoPage"
+              },
+              "displayValue": {
+                "text": "0,91 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Impôts",
+            "detail": {
+              "text": "0,29 €",
+              "displayValue": {
+                "text": "0,29 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Total",
+            "detail": {
+              "text": "0,62 €",
+              "displayValue": {
+                "text": "0,62 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Documents",
+        "data": [
+          {
+            "title": "Relevé",
+            "action": {
+              "payload": {
+                "path": "api/v2/interest-experience/interest/document/019de13f-acfc-7815-a47d-6e0b85b03131",
+                "title": "Relevé",
+                "shareable": true
+              },
+              "type": "authenticatedBrowserModal"
+            },
+            "id": "019de13f-acfc-7815-a47d-6e0b85b03131",
+            "postboxType": ""
+          }
+        ],
+        "type": "documents"
+      },
+      {
+        "title": "",
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "leading": {
+                "type": "avatar",
+                "icon": ""
+              },
+              "content": {
+                "type": "default",
+                "title": ""
+              },
+              "action": {
+                "payload": {
+                  "contextCategory": "NHC",
+                  "contextParams": {
+                    "timelineEventId": "019de13f-acfc-7815-a47d-6e0b85b03131",
+                    "chat_flow_key": "NHC_0020_interest_past_interest_payout"
+                  }
+                },
+                "type": "customerSupportChat"
+              },
+              "type": "listItem"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}
