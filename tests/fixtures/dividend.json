@@ -1,0 +1,198 @@
+{
+  "id": "ce0c429b-1441-328f-a304-96b69dd62702",
+  "timestamp": "2026-05-20T08:36:04.810+0000",
+  "title": "Air Liquide",
+  "icon": "logos/FR0000120073/v2",
+  "avatar": {
+    "asset": "logos/FR0000120073/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "Dividende en espèces",
+  "amount": {
+    "currency": "EUR",
+    "value": 7.4,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "ce0c429b-1441-328f-a304-96b69dd62702"
+  },
+  "cashAccountNumber": "1234567890",
+  "hidden": false,
+  "deleted": false,
+  "eventType": "SSP_CORPORATE_ACTION_CASH",
+  "_detail": {
+    "isin": null,
+    "asset_name": "Air Liquide",
+    "account": null,
+    "portfolio": null,
+    "order_type": "Dividende en espèces",
+    "quantity": 2.0,
+    "unit_price": null,
+    "total": 7.4,
+    "fees": null,
+    "fees_currency": null,
+    "taxes": 0.0,
+    "taxes_currency": "EUR",
+    "dividend_per_share": 3.7,
+    "dividend_currency": "EUR",
+    "sender": null,
+    "iban": null,
+    "event_description": "Vous avez reçu 7,40 €",
+    "currency": null,
+    "document_urls": [
+      {
+        "title": "Documents",
+        "url": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/20/0eb27392/pb1779266171648150115321177133.pdf?REDACTED"
+      }
+    ]
+  },
+  "_detail_raw": {
+    "id": "ce0c429b-1441-328f-a304-96b69dd62702",
+    "sections": [
+      {
+        "title": "Vous avez reçu 7,40 €",
+        "data": {
+          "icon": {
+            "asset": "logos/FR0000120073/v2",
+            "badge": null
+          },
+          "timestamp": "2026-05-20T08:36:04.81Z",
+          "status": "executed"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Statut",
+            "detail": {
+              "text": "Exécuté",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Événement",
+            "detail": {
+              "text": "Dividende en espèces",
+              "displayValue": {
+                "text": "Dividende en espèces"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Actif",
+            "detail": {
+              "text": "Air Liquide",
+              "displayValue": {
+                "text": "Air Liquide"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Transaction",
+        "data": [
+          {
+            "title": "Actions",
+            "detail": {
+              "text": "2.000000",
+              "displayValue": {
+                "text": "2.000000"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Dividende par action",
+            "detail": {
+              "text": "3,70 €",
+              "displayValue": {
+                "text": "3,70 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Taxes",
+            "detail": {
+              "text": "0,00 €",
+              "displayValue": {
+                "text": "0,00 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Total",
+            "detail": {
+              "text": "7,40 €",
+              "displayValue": {
+                "text": "7,40 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Documents",
+        "data": [
+          {
+            "title": "Documents",
+            "detail": "20/05/2026",
+            "action": {
+              "payload": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/20/0eb27392/pb1779266171648150115321177133.pdf?REDACTED",
+              "type": "browserModal"
+            },
+            "id": "d8a111c7-8eb3-400f-b698-0ed34bc74628",
+            "postboxType": "CA_INCOME_INVOICE"
+          }
+        ],
+        "type": "documents"
+      },
+      {
+        "title": "",
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "icon": "common_empty_string",
+              "action": {
+                "payload": {
+                  "contextCategory": "NHC",
+                  "contextParams": {
+                    "timelineEventId": "ce0c429b-1441-328f-a304-96b69dd62702",
+                    "chat_flow_key": "NHC_0029_wealth_general_question_dividends"
+                  }
+                },
+                "type": "customerSupportChat"
+              },
+              "style": "highlighted",
+              "type": "listItemAvatarDefault"
+            },
+            "style": "highlighted"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}

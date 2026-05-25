@@ -1,0 +1,265 @@
+{
+  "id": "8eb8211a-f2fb-4b04-a4d4-7bcc1d7e75a2",
+  "timestamp": "2026-05-18T14:26:40.491+0000",
+  "title": "Edge MSCI EM Value USD (Acc)",
+  "icon": "logos/IE00BG0SKF03/v2",
+  "avatar": {
+    "asset": "logos/IE00BG0SKF03/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "Plan d'épargne exécuté",
+  "amount": {
+    "currency": "EUR",
+    "value": -25.0,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "8eb8211a-f2fb-4b04-a4d4-7bcc1d7e75a2"
+  },
+  "cashAccountNumber": "1234567890",
+  "hidden": false,
+  "deleted": false,
+  "eventType": "TRADING_SAVINGSPLAN_EXECUTED",
+  "_detail": {
+    "isin": "IE00BG0SKF03",
+    "asset_name": "Edge MSCI EM Value USD (Acc)",
+    "account": null,
+    "portfolio": null,
+    "order_type": null,
+    "quantity": 0.305922,
+    "unit_price": 81.72,
+    "total": 25.0,
+    "fees": null,
+    "fees_currency": null,
+    "taxes": null,
+    "taxes_currency": null,
+    "dividend_per_share": null,
+    "dividend_currency": null,
+    "sender": null,
+    "iban": null,
+    "event_description": "Vous avez épargné 25,00 €",
+    "currency": null,
+    "document_urls": [
+      {
+        "title": "Facture d'exécution",
+        "url": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/18/0eb27392/pb177912140500615317657934825.pdf?REDACTED"
+      }
+    ]
+  },
+  "_detail_raw": {
+    "id": "8eb8211a-f2fb-4b04-a4d4-7bcc1d7e75a2",
+    "sections": [
+      {
+        "title": "Vous avez épargné 25,00 €",
+        "data": {
+          "icon": {
+            "asset": "logos/IE00BG0SKF03/v2",
+            "badge": null
+          },
+          "timestamp": "2026-05-18T14:26:40.491231Z",
+          "status": "executed"
+        },
+        "action": {
+          "payload": "IE00BG0SKF03",
+          "type": "instrumentDetail"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Plan d'épargne",
+            "detail": {
+              "text": "Exécuté",
+              "functionalStyle": "EXECUTED",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Paiement",
+            "detail": {
+              "text": "Espèces",
+              "icon": "logos/bank_traderepublic/v2",
+              "type": "iconWithText"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Actif",
+            "detail": {
+              "text": "Edge MSCI EM Value USD (Acc)",
+              "displayValue": {
+                "text": "Edge MSCI EM Value USD (Acc)"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Transaction",
+            "detail": {
+              "text": "0,305922 ×  81,72 €",
+              "action": {
+                "payload": {
+                  "id": "00000000-0000-0000-0000-1234567890",
+                  "sections": [
+                    {
+                      "title": "Transaction",
+                      "type": "title"
+                    },
+                    {
+                      "data": [
+                        {
+                          "title": "Prix du titre",
+                          "detail": {
+                            "text": "81,72 €",
+                            "displayValue": {
+                              "text": "81,72 €"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "Actions",
+                          "detail": {
+                            "text": "0,305922",
+                            "displayValue": {
+                              "text": "0,305922"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        },
+                        {
+                          "title": "Total",
+                          "detail": {
+                            "text": "25,00 €",
+                            "displayValue": {
+                              "text": "25,00 €"
+                            },
+                            "type": "text"
+                          },
+                          "style": "plain"
+                        }
+                      ],
+                      "type": "table"
+                    }
+                  ]
+                },
+                "displayMode": "bottomSheet",
+                "type": "infoPage"
+              },
+              "displayValue": {
+                "text": "81,72 €",
+                "prefix": "0,305922 × "
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Frais",
+            "detail": {
+              "text": "Gratuit",
+              "displayValue": {
+                "text": "Gratuit"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Total",
+            "detail": {
+              "text": "25,00 €",
+              "displayValue": {
+                "text": "25,00 €"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Plan d'épargne",
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "title": "Edge MSCI EM Value USD (Acc)",
+              "timestamp": "2026-05-18T14:26:40.491231Z",
+              "amount": "25,00 €",
+              "icon": {
+                "asset": "logos/IE00BG0SKF03/v2",
+                "badge": null
+              },
+              "status": "executed",
+              "action": {
+                "payload": {
+                  "savingsPlanId": "9f11cef2-7680-4593-a59b-746f6fa370b5"
+                },
+                "type": "openSavingsPlanOverview"
+              },
+              "subtitle": "Chaque semaine",
+              "type": "embeddedTimelineItem"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Documents",
+        "data": [
+          {
+            "title": "Facture d'exécution",
+            "action": {
+              "payload": "https://traderepublic-postbox-platform-production.s3.eu-central-1.amazonaws.com/timeline/postbox/2026/5/18/0eb27392/pb177912140500615317657934825.pdf?REDACTED",
+              "type": "browserModal"
+            },
+            "id": "46d338b7-76c9-4cb4-baf0-bda28f35fe02",
+            "postboxType": "SECURITIES_SETTLEMENT_SAVINGS_PLAN"
+          }
+        ],
+        "type": "documents"
+      },
+      {
+        "title": "",
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "icon": "",
+              "action": {
+                "payload": {
+                  "contextCategory": "NHC",
+                  "contextParams": {
+                    "chat_flow_key": "NHC_0029_wealth_Failed_savings_plan_execution",
+                    "customerSupportChatVisible": "false",
+                    "timelineEventId": "8eb8211a-f2fb-4b04-a4d4-7bcc1d7e75a2",
+                    "savingsPlanId": "9f11cef2-7680-4593-a59b-746f6fa370b5",
+                    "primId": "N1780975639"
+                  }
+                },
+                "type": "customerSupportChat"
+              },
+              "style": "highlighted",
+              "type": "listItemAvatarDefault"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}
