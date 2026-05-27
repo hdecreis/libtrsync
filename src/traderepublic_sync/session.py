@@ -126,7 +126,7 @@ class TRSession:
 
         connect_payload = dict(WS_CONNECT_PAYLOAD)
         connect_payload["locale"] = self._locale
-        await ws.send(f"connect 31 {json.dumps(connect_payload)}")
+        await ws.send(f"connect 34 {json.dumps(connect_payload)}")
         ack = await ws.recv()
         if ack != "connected":
             await ws.close()
@@ -342,9 +342,12 @@ class TRSession:
     async def subscribe_portfolio(self, sec_acc_no: str, callback: Callable) -> int:
         """Subscribe to live portfolio position updates.
 
-        ``callback(data)`` receives frames with a ``positions`` list.
+        Uses ``compactPortfolioByTypeV2`` — the response groups positions
+        under per-instrument-type ``categories[]``. Pass the raw frame
+        through :func:`traderepublic_sync.client._flatten_portfolio_positions`
+        if you want a flat list.
         """
-        return await self.subscribe("compactPortfolio", {"secAccNo": sec_acc_no}, callback)
+        return await self.subscribe("compactPortfolioByTypeV2", {"secAccNo": sec_acc_no}, callback)
 
     async def subscribe_cash(self, cash_acc_no: str, callback: Callable) -> int:
         """Subscribe to live available cash updates.

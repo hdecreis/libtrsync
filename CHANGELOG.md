@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-27
+
+Adopts TR's V2 portfolio subscription (`compactPortfolioByTypeV2`) — now
+the only sub that surfaces crypto positions — and bumps the WebSocket
+handshake to protocol 34, which V2-class subs require. Includes one
+observable callback shape change for consumers of `subscribe_portfolio`.
+
+### Changed
+- **BREAKING:** `TRSession.subscribe_portfolio` now subscribes to
+  `compactPortfolioByTypeV2` instead of the legacy `compactPortfolio`.
+  Callbacks receive the V2 envelope
+  (`{"categories": [{"categoryType": ..., "positions": [...]}, ...]}`)
+  instead of the legacy flat shape (`{"positions": [...]}`). Migration:
+  pass each frame through the new
+  `traderepublic_sync.client._flatten_portfolio_positions(data)` helper
+  for a normalized flat list, or index `data["categories"]` directly.
+- **Behaviour:** `TRClient.fetch_asset_list` now uses
+  `compactPortfolioByTypeV2` internally too. The returned dicts have
+  the same keys as before, but `asset_name` may differ for some
+  instruments because V2 carries an inline `name` (the same string the
+  TR mobile app shows) and we use it instead of issuing the per-position
+  `instrument` round trip. Examples observed in the wild:
+  `"ISHARES PHYSICAL GOLD"` → `"Physical Gold USD (Acc)"`,
+  `"iShares VII plc - iShares Core S&P 500 UCITS ETF USD (Acc)"` →
+  `"Core S&P 500 USD (Acc)"`,
+  `"TAIWAN SEMICON.MANU.ADR/5"` → `"TSMC (ADR)"`. Field name, type, and
+  position in the dict are unchanged.
+- **Internal:** every WebSocket handshake in `client.py` and
+  `session.py` is now `connect 34` (was `connect 31`). V2-class subs
+  require protocol 34; protocol 31 silently drops them. `fetch_account_pairs`
+  was already on 34. Fully transparent unless a consumer was monkey-patching
+  the connect frame.
+
+### Added
+- `_flatten_portfolio_positions(portfolio)` — private helper that
+  normalises both the V2 (`categories[].positions`) and legacy
+  (`positions`) responses into a flat list of dicts with stable keys.
+  Each V2 position is normalised so `instrumentId` aliases `isin`,
+  `averageBuyIn` is the unwrapped scalar (with `averageBuyInCurrency`
+  exposed separately), and `_category` tags the source bucket.
+- Two new keys on every `fetch_asset_list` asset dict:
+  `instrument_type` (V2: `stock` / `fund` / `crypto` / `privateFund`)
+  and `category` (V2: `stocksAndETFs` / `cryptos` / `privateMarkets`).
+  Both are `None` when the legacy sub is used.
+- `examples/probe_portfolio_v2.py` — diagnostic script that reuses the
+  cached session, captures the raw V2 portfolio response, the legacy
+  response, and a side-by-side check of the BTC home-exchange + ticker
+  chain on both one-shot and long-lived `TRSession` paths. Useful for
+  reverse-engineering future TR response-shape changes without needing
+  another 2FA round.
+- 5 new tests covering the V2 / legacy normalisation, including a smoke
+  test on the exact V2 shape observed live and the alternate `instruments`
+  key some TR app versions use.
+
+### Performance
+- `fetch_asset_list` skips the per-position `instrument` round trip when
+  V2 already carries `name`. For an 8-position portfolio that's 8 fewer
+  WS sub/unsub cycles — a meaningful saving when the call is wired into
+  a polling loop.
+
+### Notes for consumers
+- Consumers of `subscribe_portfolio` are the only ones affected. If you
+  read `data["positions"]` inside your callback, you now get `None`.
+  Wrap with `_flatten_portfolio_positions(data)` to keep the previous
+  shape, or migrate to the categorised view.
+- The auth state of `compactPortfolioByTypeV2` is occasionally rejected
+  by TR with `AUTHENTICATION_ERROR / source=MAPPER` even on a valid
+  session token (other subs on the same WS work fine). The library
+  surfaces this as the usual `{"_error": True, "data": {...}}` envelope
+  on the callback — make sure your `on_*` callbacks check for `_error`
+  before processing.
+
 ## [0.3.1] — 2026-05-25
 
 Patch release: scrub an AWS pre-signed URL that slipped into one of
@@ -218,7 +290,8 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.0
 [0.3.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.2.0

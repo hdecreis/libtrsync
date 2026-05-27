@@ -8,10 +8,12 @@ hitting the network.
 import json
 from datetime import datetime, timezone
 
-import pytest
-
 from traderepublic_sync import TRClient
-from traderepublic_sync.client import _coerce_datetime, _parse_iso_timestamp
+from traderepublic_sync.client import (
+    _coerce_datetime,
+    _flatten_portfolio_positions,
+    _parse_iso_timestamp,
+)
 
 
 # ── Helpers: minimal fake WS that replays a scripted page sequence ─────────
@@ -40,7 +42,7 @@ class _FakeWS:
     # `async with self._ws_session() as ws:`, which yields this object.
 
     async def send(self, msg: str):
-        # Strip the "connect 31 {...}" handshake — no response is replayed
+        # Strip the "connect 34 {...}" handshake — no response is replayed
         # for it beyond what __aenter__ already pushed.
         if msg.startswith("connect "):
             return
@@ -97,7 +99,7 @@ def _install_fake_ws(monkeypatch, pages, initial_ack="connected"):
     @asynccontextmanager
     async def fake_ws_session(self):
         ws = _FakeWS(pages)
-        # The TRClient handshake calls send("connect 31 {...}") then recv().
+        # The TRClient handshake calls send("connect 34 {...}") then recv().
         # Push the ack into the inbox so recv() returns "connected".
         ws._inbox.append(initial_ack)
         try:
@@ -156,6 +158,111 @@ def test_coerce_datetime_naive_assumed_utc():
     out = _coerce_datetime(naive)
     assert out.tzinfo == timezone.utc
     assert out.replace(tzinfo=None) == naive
+
+
+# ── _flatten_portfolio_positions (compactPortfolioByTypeV2) ────────────────
+
+def test_flatten_portfolio_v2_normalizes_field_names():
+    """V2 uses ``isin`` and an envelope ``averageBuyIn``; the helper maps
+    both to the legacy field names so downstream code stays uniform."""
+    response = {
+        "categories": [
+            {
+                "categoryType": "stocksAndETFs",
+                "positions": [
+                    {
+                        "isin": "US0382221051",
+                        "averageBuyIn": {"value": 258.19, "currency": "EUR"},
+                        "netSize": 2.0,
+                        "name": "Applied Materials",
+                        "instrumentType": "stock",
+                    },
+                ],
+            },
+        ]
+    }
+    out = _flatten_portfolio_positions(response)
+    assert len(out) == 1
+    pos = out[0]
+    assert pos["instrumentId"] == "US0382221051"      # legacy alias
+    assert pos["isin"] == "US0382221051"              # original V2 field kept
+    assert pos["averageBuyIn"] == 258.19              # unwrapped from envelope
+    assert pos["averageBuyInCurrency"] == "EUR"       # currency exposed separately
+    assert pos["name"] == "Applied Materials"
+    assert pos["instrumentType"] == "stock"
+    assert pos["_category"] == "stocksAndETFs"
+
+
+def test_flatten_portfolio_v2_real_shape_from_dump():
+    """Smoke test on the exact V2 shape observed in a live response —
+    one position per known category, including the Bitcoin crypto."""
+    response = {
+        "categories": [
+            {
+                "categoryType": "stocksAndETFs",
+                "positions": [
+                    {"isin": "IE00B4ND3602", "averageBuyIn": {"value": 67.18, "currency": "EUR"},
+                     "netSize": 17.99, "name": "Physical Gold USD (Acc)", "instrumentType": "fund"},
+                ],
+            },
+            {
+                "categoryType": "cryptos",
+                "positions": [
+                    {"isin": "XF000BTC0017", "averageBuyIn": {"value": 72039.57, "currency": "EUR"},
+                     "netSize": 0.000152, "name": "Bitcoin", "instrumentType": "crypto"},
+                ],
+            },
+            {
+                "categoryType": "privateMarkets",
+                "positions": [
+                    {"isin": "LU3170240538", "averageBuyIn": {"value": 101.98, "currency": "EUR"},
+                     "netSize": 2.65, "name": "Private Equity", "instrumentType": "privateFund"},
+                ],
+            },
+        ]
+    }
+    out = _flatten_portfolio_positions(response)
+    assert [p["instrumentId"] for p in out] == ["IE00B4ND3602", "XF000BTC0017", "LU3170240538"]
+    assert [p["_category"] for p in out] == ["stocksAndETFs", "cryptos", "privateMarkets"]
+    btc = next(p for p in out if p["isin"] == "XF000BTC0017")
+    assert btc["instrumentType"] == "crypto"
+    assert btc["name"] == "Bitcoin"
+    assert btc["averageBuyIn"] == 72039.57
+
+
+def test_flatten_portfolio_v2_uses_instruments_key_when_present():
+    """Some TR app versions use ``instruments`` instead of ``positions``."""
+    response = {
+        "categories": [
+            {"categoryType": "crypto", "instruments": [{"isin": "XF000BTC0017", "netSize": 1}]},
+        ]
+    }
+    out = _flatten_portfolio_positions(response)
+    assert len(out) == 1 and out[0]["instrumentId"] == "XF000BTC0017"
+    assert out[0]["_category"] == "crypto"
+
+
+def test_flatten_portfolio_legacy_flat_shape_passes_through_unchanged():
+    """Old ``compactPortfolio`` flat shape uses ``instrumentId`` + string
+    ``averageBuyIn`` already, and is returned untouched."""
+    response = {"positions": [
+        {"instrumentId": "AAA", "netSize": "1.0", "averageBuyIn": "100.0"},
+        {"instrumentId": "BBB", "netSize": "2.0", "averageBuyIn": "200.0"},
+    ]}
+    out = _flatten_portfolio_positions(response)
+    assert [p["instrumentId"] for p in out] == ["AAA", "BBB"]
+    assert "_category" not in out[0]
+    # Legacy shape isn't normalized — averageBuyIn stays a string, callers
+    # already coerce via _to_float.
+    assert out[0]["averageBuyIn"] == "100.0"
+
+
+def test_flatten_portfolio_empty_and_garbage():
+    assert _flatten_portfolio_positions({}) == []
+    assert _flatten_portfolio_positions({"categories": []}) == []
+    assert _flatten_portfolio_positions(None) == []
+    # categories that aren't dicts get skipped, not raised
+    assert _flatten_portfolio_positions({"categories": ["nope", None]}) == []
 
 
 # ── End-to-end filter tests ─────────────────────────────────────────────────

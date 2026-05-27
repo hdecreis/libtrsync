@@ -371,7 +371,7 @@ class TRClient:
         async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
-            await ws.send(f"connect 31 {json.dumps(connect_payload)}")
+            await ws.send(f"connect 34 {json.dumps(connect_payload)}")
             await ws.recv()
             logger.info("WebSocket connected")
 
@@ -499,9 +499,10 @@ class TRClient:
     async def fetch_asset_list(self, session_token: str | None = None) -> list[dict]:
         """Fetch current portfolio positions with live prices.
 
-        Uses ``compactPortfolio`` (quantity + cost basis), ``homeInstrumentExchange``
-        (exchange resolution), and ``ticker`` (live price + previous close) in a
-        single WebSocket session. All derived metrics are computed client-side:
+        Uses ``compactPortfolioByTypeV2`` (quantity + cost basis),
+        ``homeInstrumentExchange`` (exchange resolution), and ``ticker``
+        (live price + previous close) in a single WebSocket session. All
+        derived metrics are computed client-side:
 
         - ``current_value``   = quantity × current_price
         - ``daily_trend_pct`` = (current_price − previous_close) / previous_close × 100
@@ -519,7 +520,7 @@ class TRClient:
         async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
-            await ws.send(f"connect 31 {json.dumps(connect_payload)}")
+            await ws.send(f"connect 34 {json.dumps(connect_payload)}")
             await ws.recv()
 
             msg_id = 0
@@ -529,9 +530,9 @@ class TRClient:
                 msg_id += 1
                 return await _ws_sub(ws, msg_id, payload, timeout)
 
-            portfolio = await sub_recv({"type": "compactPortfolio", "token": token, "secAccNo": sec_acc_no})
-            positions = portfolio.get("positions", [])
-            logger.info("compactPortfolio: %d positions", len(positions))
+            portfolio = await sub_recv({"type": "compactPortfolioByTypeV2", "token": token, "secAccNo": sec_acc_no})
+            positions = _flatten_portfolio_positions(portfolio)
+            logger.info("compactPortfolioByTypeV2: %d positions", len(positions))
 
             assets = []
             for pos in positions:
@@ -543,8 +544,14 @@ class TRClient:
                 virtual_size = _to_float(pos.get("virtualSize"))
                 avg_buy_in   = _to_float(pos.get("averageBuyIn"))
 
-                instrument = await sub_recv({"type": "instrument", "id": isin, "jurisdiction": "FR", "token": token})
-                name = instrument.get("name", isin)
+                # V2 carries the display name in the portfolio payload —
+                # skip the per-position ``instrument`` round-trip when it's
+                # already there. Falls back to the legacy lookup for the
+                # old compactPortfolio shape (no ``name`` field).
+                name = pos.get("name")
+                if not name:
+                    instrument = await sub_recv({"type": "instrument", "id": isin, "jurisdiction": "FR", "token": token})
+                    name = instrument.get("name", isin)
 
                 home = await sub_recv({"type": "homeInstrumentExchange", "id": isin, "token": token})
                 exchange_id = home.get("id") or home.get("exchangeId")
@@ -574,6 +581,9 @@ class TRClient:
                     "bid": bid,
                     "ask": ask,
                     "open": open_price,
+                    # V2 enrichments (None if the legacy sub was used).
+                    "instrument_type": pos.get("instrumentType"),
+                    "category": pos.get("_category"),
                 }
 
                 if last_price is not None and quantity:
@@ -679,7 +689,7 @@ class TRClient:
         async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
-            await ws.send(f"connect 31 {json.dumps(connect_payload)}")
+            await ws.send(f"connect 34 {json.dumps(connect_payload)}")
             await ws.recv()
 
             msg_id = 0
@@ -760,7 +770,7 @@ class TRClient:
         async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
             connect_payload["locale"] = self.locale
-            await ws.send(f"connect 31 {json.dumps(connect_payload)}")
+            await ws.send(f"connect 34 {json.dumps(connect_payload)}")
             await ws.recv()
 
             payload = {"type": "availableCash", "token": token}
@@ -847,6 +857,71 @@ async def _ws_sub(ws, msg_id: int, payload: dict, timeout: float = 5.0) -> dict:
             # Connection may already be dead; nothing more we can do here.
             pass
     return result
+
+
+def _flatten_portfolio_positions(portfolio: dict) -> list[dict]:
+    """Normalize ``compactPortfolioByTypeV2`` (or legacy ``compactPortfolio``)
+    into a flat list of positions with a stable field shape.
+
+    Both subscriptions are supported and produce dicts with the same keys
+    regardless of source, so callers don't have to branch:
+
+    - ``instrumentId`` — ISIN (mirrored as ``isin`` for V2 consumers)
+    - ``netSize`` / ``virtualSize`` — quantities (float-coercible)
+    - ``averageBuyIn`` — cost basis as a plain number (unwrapped from the
+      V2 ``{value, currency}`` envelope when present)
+    - ``averageBuyInCurrency`` — populated from V2's envelope when present
+    - ``name``, ``instrumentType``, ``_category`` — V2-only enrichments
+
+    The V2 response groups under ``categories[].positions`` (also seen as
+    ``categories[].instruments`` across TR app versions). The legacy
+    response is a top-level ``positions`` list.
+    """
+    if not isinstance(portfolio, dict):
+        return []
+
+    # Legacy flat shape — passes through unchanged for back-compat.
+    flat = portfolio.get("positions")
+    if isinstance(flat, list) and flat:
+        return list(flat)
+
+    out: list[dict] = []
+    for group in portfolio.get("categories") or []:
+        if not isinstance(group, dict):
+            continue
+        category = group.get("categoryType") or group.get("type")
+        for raw in (group.get("positions") or group.get("instruments") or []):
+            if not isinstance(raw, dict):
+                continue
+            out.append(_normalize_v2_position(raw, category))
+    return out
+
+
+def _normalize_v2_position(pos: dict, category: str | None) -> dict:
+    """Map a V2 position dict to the shape downstream code expects.
+
+    Keeps every original field intact and adds the legacy-style aliases
+    (``instrumentId``, scalar ``averageBuyIn``) plus the ``_category``
+    tag.
+    """
+    isin = pos.get("isin") or pos.get("instrumentId")
+
+    avg = pos.get("averageBuyIn")
+    if isinstance(avg, dict):
+        avg_scalar = avg.get("value")
+        avg_currency = avg.get("currency")
+    else:
+        avg_scalar = avg
+        avg_currency = None
+
+    normalized = {**pos, "instrumentId": isin, "isin": isin}
+    if avg_scalar is not None:
+        normalized["averageBuyIn"] = avg_scalar
+    if avg_currency:
+        normalized["averageBuyInCurrency"] = avg_currency
+    if category and "_category" not in normalized:
+        normalized["_category"] = category
+    return normalized
 
 
 def _coerce_datetime(value):
