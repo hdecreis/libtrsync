@@ -18,6 +18,7 @@ from traderepublic_sync.client import (
 
 # ── Helpers: minimal fake WS that replays a scripted page sequence ─────────
 
+
 class _FakeWS:
     """Stand-in for a websockets connection used by fetch_transactions.
 
@@ -33,6 +34,7 @@ class _FakeWS:
         self._pages = list(pages)
         self._inbox: list[str] = []
         self.detail_fetched: list[str] = []
+        self.tl_payloads: list[dict] = []
         self._next_page_idx = 0
         self._after_to_page = {
             page.get("_after"): i for i, page in enumerate(pages) if page.get("_after")
@@ -53,6 +55,7 @@ class _FakeWS:
             payload = json.loads(raw)
             ptype = payload.get("type")
             if ptype == "timelineTransactions":
+                self.tl_payloads.append(payload)
                 after = payload.get("after")
                 if after is None:
                     page_idx = 0
@@ -62,10 +65,12 @@ class _FakeWS:
                     body = json.dumps({"items": []})
                 else:
                     page = self._pages[page_idx]
-                    body = json.dumps({
-                        "items": page["items"],
-                        "cursors": page.get("cursors", {}),
-                    })
+                    body = json.dumps(
+                        {
+                            "items": page["items"],
+                            "cursors": page.get("cursors", {}),
+                        }
+                    )
                 self._inbox.append(f"{sub_id} A {body}")
             elif ptype == "timelineDetailV2":
                 self.detail_fetched.append(payload.get("id"))
@@ -126,6 +131,7 @@ def _item(tid: str, ts: str, amount: float = -10.0):
 
 # ── Parser tests ────────────────────────────────────────────────────────────
 
+
 def test_parse_iso_tz_offset_no_colon():
     dt = _parse_iso_timestamp("2026-05-18T14:26:40.491+0000")
     assert dt == datetime(2026, 5, 18, 14, 26, 40, 491000, tzinfo=timezone.utc)
@@ -148,7 +154,9 @@ def test_parse_iso_handles_garbage():
 
 
 def test_coerce_datetime_string_and_datetime():
-    assert _coerce_datetime("2026-05-18T14:26:40Z") == datetime(2026, 5, 18, 14, 26, 40, tzinfo=timezone.utc)
+    assert _coerce_datetime("2026-05-18T14:26:40Z") == datetime(
+        2026, 5, 18, 14, 26, 40, tzinfo=timezone.utc
+    )
     aware = datetime(2026, 5, 18, tzinfo=timezone.utc)
     assert _coerce_datetime(aware) is aware
 
@@ -161,6 +169,7 @@ def test_coerce_datetime_naive_assumed_utc():
 
 
 # ── _flatten_portfolio_positions (compactPortfolioByTypeV2) ────────────────
+
 
 def test_flatten_portfolio_v2_normalizes_field_names():
     """V2 uses ``isin`` and an envelope ``averageBuyIn``; the helper maps
@@ -184,10 +193,10 @@ def test_flatten_portfolio_v2_normalizes_field_names():
     out = _flatten_portfolio_positions(response)
     assert len(out) == 1
     pos = out[0]
-    assert pos["instrumentId"] == "US0382221051"      # legacy alias
-    assert pos["isin"] == "US0382221051"              # original V2 field kept
-    assert pos["averageBuyIn"] == 258.19              # unwrapped from envelope
-    assert pos["averageBuyInCurrency"] == "EUR"       # currency exposed separately
+    assert pos["instrumentId"] == "US0382221051"  # legacy alias
+    assert pos["isin"] == "US0382221051"  # original V2 field kept
+    assert pos["averageBuyIn"] == 258.19  # unwrapped from envelope
+    assert pos["averageBuyInCurrency"] == "EUR"  # currency exposed separately
     assert pos["name"] == "Applied Materials"
     assert pos["instrumentType"] == "stock"
     assert pos["_category"] == "stocksAndETFs"
@@ -201,29 +210,52 @@ def test_flatten_portfolio_v2_real_shape_from_dump():
             {
                 "categoryType": "stocksAndETFs",
                 "positions": [
-                    {"isin": "IE00B4ND3602", "averageBuyIn": {"value": 67.18, "currency": "EUR"},
-                     "netSize": 17.99, "name": "Physical Gold USD (Acc)", "instrumentType": "fund"},
+                    {
+                        "isin": "IE00B4ND3602",
+                        "averageBuyIn": {"value": 67.18, "currency": "EUR"},
+                        "netSize": 17.99,
+                        "name": "Physical Gold USD (Acc)",
+                        "instrumentType": "fund",
+                    },
                 ],
             },
             {
                 "categoryType": "cryptos",
                 "positions": [
-                    {"isin": "XF000BTC0017", "averageBuyIn": {"value": 72039.57, "currency": "EUR"},
-                     "netSize": 0.000152, "name": "Bitcoin", "instrumentType": "crypto"},
+                    {
+                        "isin": "XF000BTC0017",
+                        "averageBuyIn": {"value": 72039.57, "currency": "EUR"},
+                        "netSize": 0.000152,
+                        "name": "Bitcoin",
+                        "instrumentType": "crypto",
+                    },
                 ],
             },
             {
                 "categoryType": "privateMarkets",
                 "positions": [
-                    {"isin": "LU3170240538", "averageBuyIn": {"value": 101.98, "currency": "EUR"},
-                     "netSize": 2.65, "name": "Private Equity", "instrumentType": "privateFund"},
+                    {
+                        "isin": "LU3170240538",
+                        "averageBuyIn": {"value": 101.98, "currency": "EUR"},
+                        "netSize": 2.65,
+                        "name": "Private Equity",
+                        "instrumentType": "privateFund",
+                    },
                 ],
             },
         ]
     }
     out = _flatten_portfolio_positions(response)
-    assert [p["instrumentId"] for p in out] == ["IE00B4ND3602", "XF000BTC0017", "LU3170240538"]
-    assert [p["_category"] for p in out] == ["stocksAndETFs", "cryptos", "privateMarkets"]
+    assert [p["instrumentId"] for p in out] == [
+        "IE00B4ND3602",
+        "XF000BTC0017",
+        "LU3170240538",
+    ]
+    assert [p["_category"] for p in out] == [
+        "stocksAndETFs",
+        "cryptos",
+        "privateMarkets",
+    ]
     btc = next(p for p in out if p["isin"] == "XF000BTC0017")
     assert btc["instrumentType"] == "crypto"
     assert btc["name"] == "Bitcoin"
@@ -234,7 +266,10 @@ def test_flatten_portfolio_v2_uses_instruments_key_when_present():
     """Some TR app versions use ``instruments`` instead of ``positions``."""
     response = {
         "categories": [
-            {"categoryType": "crypto", "instruments": [{"isin": "XF000BTC0017", "netSize": 1}]},
+            {
+                "categoryType": "crypto",
+                "instruments": [{"isin": "XF000BTC0017", "netSize": 1}],
+            },
         ]
     }
     out = _flatten_portfolio_positions(response)
@@ -245,10 +280,12 @@ def test_flatten_portfolio_v2_uses_instruments_key_when_present():
 def test_flatten_portfolio_legacy_flat_shape_passes_through_unchanged():
     """Old ``compactPortfolio`` flat shape uses ``instrumentId`` + string
     ``averageBuyIn`` already, and is returned untouched."""
-    response = {"positions": [
-        {"instrumentId": "AAA", "netSize": "1.0", "averageBuyIn": "100.0"},
-        {"instrumentId": "BBB", "netSize": "2.0", "averageBuyIn": "200.0"},
-    ]}
+    response = {
+        "positions": [
+            {"instrumentId": "AAA", "netSize": "1.0", "averageBuyIn": "100.0"},
+            {"instrumentId": "BBB", "netSize": "2.0", "averageBuyIn": "200.0"},
+        ]
+    }
     out = _flatten_portfolio_positions(response)
     assert [p["instrumentId"] for p in out] == ["AAA", "BBB"]
     assert "_category" not in out[0]
@@ -292,6 +329,7 @@ PAGES = [
 
 def _fetch(client, **kwargs):
     import asyncio
+
     return asyncio.run(client.fetch_transactions(session_token="tok", **kwargs))
 
 
@@ -301,8 +339,12 @@ def test_no_filter_walks_everything(monkeypatch):
     result = _fetch(client)
     ids = [item["id"] for item in result["raw_items"]]
     assert ids == [
-        "id-2026-05-20", "id-2026-05-15", "id-2026-05-10",
-        "id-2026-04-20", "id-2026-04-10", "id-2026-03-01",
+        "id-2026-05-20",
+        "id-2026-05-15",
+        "id-2026-05-10",
+        "id-2026-04-20",
+        "id-2026-04-10",
+        "id-2026-03-01",
     ]
 
 
@@ -314,7 +356,9 @@ def test_since_stops_walk_when_older_than_bound(monkeypatch):
     result = _fetch(client, since=datetime(2026, 4, 15, tzinfo=timezone.utc))
     ids = [item["id"] for item in result["raw_items"]]
     assert ids == [
-        "id-2026-05-20", "id-2026-05-15", "id-2026-05-10",
+        "id-2026-05-20",
+        "id-2026-05-15",
+        "id-2026-05-10",
         "id-2026-04-20",
     ]
 
@@ -336,8 +380,11 @@ def test_until_skips_newer_but_keeps_walking(monkeypatch):
     result = _fetch(client, until="2026-05-16T00:00:00Z")
     ids = [item["id"] for item in result["raw_items"]]
     assert ids == [
-        "id-2026-05-15", "id-2026-05-10",
-        "id-2026-04-20", "id-2026-04-10", "id-2026-03-01",
+        "id-2026-05-15",
+        "id-2026-05-10",
+        "id-2026-04-20",
+        "id-2026-04-10",
+        "id-2026-03-01",
     ]
 
 
@@ -364,7 +411,7 @@ def test_until_skips_detail_fetch_for_excluded_items(monkeypatch):
     client = TRClient(waf_token="w", session_token="tok")
     _fetch(client, until="2026-05-16T00:00:00Z")
     fetched = captured["ws"].detail_fetched
-    assert "id-2026-05-20" not in fetched   # skipped (newer than `until`)
+    assert "id-2026-05-20" not in fetched  # skipped (newer than `until`)
     assert "id-2026-05-15" in fetched
     assert "id-2026-04-20" in fetched
 
@@ -380,16 +427,18 @@ def test_since_id_stops_at_boundary_excluding_it(monkeypatch):
 def test_since_id_normalizes_zero_runs(monkeypatch):
     # Build a custom page where the id has TR's absurd zero-padding.
     padded_id = "ce0c429b-00000000000000-328f-a304-96b69dd62702"
-    pages = [{
-        "_after": None,
-        "items": [
-            _item("newer-1", "2026-05-20T10:00:00Z"),
-            _item("newer-2", "2026-05-15T10:00:00Z"),
-            _item(padded_id, "2026-05-10T10:00:00Z"),
-            _item("older", "2026-05-01T10:00:00Z"),
-        ],
-        "cursors": {},
-    }]
+    pages = [
+        {
+            "_after": None,
+            "items": [
+                _item("newer-1", "2026-05-20T10:00:00Z"),
+                _item("newer-2", "2026-05-15T10:00:00Z"),
+                _item(padded_id, "2026-05-10T10:00:00Z"),
+                _item("older", "2026-05-01T10:00:00Z"),
+            ],
+            "cursors": {},
+        }
+    ]
     _install_fake_ws(monkeypatch, pages)
     client = TRClient(waf_token="w", session_token="tok")
 
@@ -419,7 +468,10 @@ def test_since_id_stops_in_first_page_skips_page_2(monkeypatch):
     _fetch(client, since_id="id-2026-05-15")
     # The second page (April + March items) must never have been requested.
     fetched = captured["ws"].detail_fetched
-    assert all(not f.startswith("id-2026-04") and not f.startswith("id-2026-03") for f in fetched), fetched
+    assert all(
+        not f.startswith("id-2026-04") and not f.startswith("id-2026-03")
+        for f in fetched
+    ), fetched
 
 
 def test_combined_until_and_since(monkeypatch):
@@ -432,3 +484,57 @@ def test_combined_until_and_since(monkeypatch):
     )
     ids = [item["id"] for item in result["raw_items"]]
     assert ids == ["id-2026-05-15", "id-2026-05-10", "id-2026-04-20"]
+
+
+def _capture_ws(monkeypatch, pages):
+    """Patch _ws_session to yield a captured FakeWS, returned to the caller."""
+    from contextlib import asynccontextmanager
+    from traderepublic_sync import client as client_mod
+
+    captured = {}
+
+    @asynccontextmanager
+    async def capturing(self):
+        ws = _FakeWS(pages)
+        ws._inbox.append("connected")
+        captured["ws"] = ws
+        try:
+            yield ws
+        finally:
+            await ws.close()
+
+    monkeypatch.setattr(client_mod.TRClient, "_ws_session", capturing)
+    return captured
+
+
+def test_event_types_filter_injected_as_types(monkeypatch):
+    captured = _capture_ws(monkeypatch, PAGES)
+    client = TRClient(waf_token="w", session_token="tok")
+    _fetch(client, event_types=["TRADING_TRADE_EXECUTED", "INTEREST_PAYOUT"])
+    payloads = captured["ws"].tl_payloads
+    assert payloads, "no timelineTransactions sub was sent"
+    # Every page payload carries the server-side `types` filter (and no
+    # `categoryIds`), under the TR wire key — not `eventTypes`.
+    for p in payloads:
+        assert p["types"] == ["TRADING_TRADE_EXECUTED", "INTEREST_PAYOUT"]
+        assert "categoryIds" not in p
+        assert "eventTypes" not in p
+
+
+def test_categories_filter_injected_as_categoryids(monkeypatch):
+    captured = _capture_ws(monkeypatch, PAGES)
+    client = TRClient(waf_token="w", session_token="tok")
+    _fetch(client, categories=["CRYPTO", "BOND"])
+    payloads = captured["ws"].tl_payloads
+    assert payloads
+    for p in payloads:
+        assert p["categoryIds"] == ["CRYPTO", "BOND"]
+        assert "types" not in p
+
+
+def test_no_filters_means_no_filter_keys(monkeypatch):
+    captured = _capture_ws(monkeypatch, PAGES)
+    client = TRClient(waf_token="w", session_token="tok")
+    _fetch(client)
+    for p in captured["ws"].tl_payloads:
+        assert "types" not in p and "categoryIds" not in p

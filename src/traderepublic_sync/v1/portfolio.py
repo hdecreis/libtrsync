@@ -31,6 +31,23 @@ from .models import (
 _CAT_BONDS = "bonds"
 _CAT_PRIVATE = "privateMarkets"
 
+# Realized-P&L fetch tuning (see ``realized_pnl``). The timeline is consulted
+# for two things, each served by a narrow server-side filtered walk instead of
+# the full history:
+#   1. Discovering instruments with a SELL leg (the "sold-off" set). Sells ride
+#      on trade-execution events; ``TRADING_TRADE_EXECUTED`` carries both buys
+#      and sells, so this set finds every disposed ISIN across all classes.
+#   2. Reconstructing realized P&L for the asset classes TR 404s on its
+#      ``taxes/pnl`` REST endpoint (crypto / bonds). Those are pulled *whole*
+#      by ``categoryIds`` (cheap — few items) so the timeline cost basis keeps
+#      every purchase, including savings-plan ones, that an event-type filter
+#      would otherwise drop. Extend if TR starts 404-ing another class.
+_REALIZED_TRADE_EVENT_TYPES = [
+    "TRADING_TRADE_EXECUTED",
+    "PRIVATE_MARKET_FUND_TRADE_EXECUTED",
+]
+_REALIZED_FALLBACK_CATEGORIES = ["CRYPTO", "BOND"]
+
 
 # ── cash frame parsing (TR returns list-or-dict; guards the DEFAULT echo) ────
 
@@ -49,6 +66,7 @@ def _cash_frame_account(data) -> str | None:
 
 def _extract_cash(data, default_currency: str) -> tuple[float | None, str]:
     """Pull ``(amount, currency)`` out of an availableCash frame (list or dict)."""
+
     def _amount(entry: dict) -> float | None:
         v = entry.get("amount")
         if v is None:
@@ -71,7 +89,9 @@ def _extract_cash(data, default_currency: str) -> tuple[float | None, str]:
             chosen = next((e for e in data if isinstance(e, dict)), None)
         if chosen is None:
             return None, default_currency
-        currency = chosen.get("currencyId") or chosen.get("currency") or default_currency
+        currency = (
+            chosen.get("currencyId") or chosen.get("currency") or default_currency
+        )
         return _amount(chosen), currency
     if isinstance(data, dict):
         currency = data.get("currencyId") or data.get("currency") or default_currency
@@ -147,7 +167,9 @@ class Portfolio:
             # different account, the filter was ignored — don't trust it.
             got = _cash_frame_account(data)
             if got and got != cash_no:
-                out.append(CashBalance(account_number=cash_no, amount=None, currency=currency))
+                out.append(
+                    CashBalance(account_number=cash_no, amount=None, currency=currency)
+                )
                 continue
             amount, ccy = _extract_cash(data, currency)
             out.append(CashBalance(account_number=cash_no, amount=amount, currency=ccy))
@@ -171,8 +193,16 @@ class Portfolio:
         raw = await self._client.fetch_fx_rates(list(currencies), self._token)
         return fx.rates_from_raw(raw)
 
-    async def transactions(self, since=None, until=None) -> list[dict]:
-        result = await self._client.fetch_transactions(self._token, since=since, until=until)
+    async def transactions(
+        self, since=None, until=None, *, event_types=None, categories=None
+    ) -> list[dict]:
+        result = await self._client.fetch_transactions(
+            self._token,
+            since=since,
+            until=until,
+            event_types=event_types,
+            categories=categories,
+        )
         return result["transactions"]
 
     # ── positions (EUR-correct, held vs committed) ────────────────────────
@@ -287,30 +317,48 @@ class Portfolio:
 
     # ── realized P&L + sold assets ────────────────────────────────────────
 
-    async def realized_pnl(self) -> dict:
+    async def realized_pnl(self, positions: list[Position] | None = None) -> dict:
         """Realized P&L + dividends across held and previously-sold instruments.
 
         Returns ``{"total_realized_eur", "total_dividends_eur", "instruments":
         list[RealizedPnl]}``. Uses TR's server figure (``taxes/pnl``) where
         available (equities/funds) and a timeline fallback for crypto/bonds
         (which TR 404s).
+
+        Rather than walking the entire timeline, this issues two narrow
+        server-side filtered fetches (see ``_REALIZED_*`` module constants):
+        a trade-event walk to find every sold-off instrument, and a
+        ``categoryIds`` walk over the 404-prone classes to reconstruct their
+        P&L with a complete cost basis.
+
+        ``positions`` is only used for the held-ISIN set; pass an already
+        fetched list (as ``snapshot`` does) to avoid re-running the position
+        walk.
         """
         pairs = await self._account_pairs()
         sec_accs = self._sec_acc_nos(pairs)
-        txs = await self.transactions()
-        positions = await self.positions()
+        if positions is None:
+            positions = await self.positions()
+
+        # (1) Trade events → the set of instruments that were (partly) sold.
+        trade_txs = await self.transactions(event_types=_REALIZED_TRADE_EVENT_TYPES)
+        # (2) Classes TR 404s on taxes/pnl, fetched whole → accurate fallback.
+        fallback_txs = await self.transactions(categories=_REALIZED_FALLBACK_CATEGORIES)
 
         held = {p.isin for p in positions if p.isin}
-        tx_index = _index_transactions(txs)
-        sold = {isin for isin, agg in tx_index.items() if agg["sells"]}
+        # Sold-off detection unions both walks (a crypto sell may surface only
+        # in the category walk); membership-only, so duplicates are harmless.
+        sold_index = _index_transactions(trade_txs + fallback_txs)
+        sold = {isin for isin, agg in sold_index.items() if agg["sells"]}
+        # The timeline fallback reads cost basis only from the category walk,
+        # which holds the complete (deduplicated) history for those classes.
+        fallback_index = _index_transactions(fallback_txs)
 
         entries: list[RealizedPnl] = []
         for isin in sorted(held | sold):
-            entries.append(await self._realized_for(isin, sec_accs, tx_index))
+            entries.append(await self._realized_for(isin, sec_accs, fallback_index))
 
-        total_realized = sum(
-            e.realized_pnl.value for e in entries if e.realized_pnl
-        )
+        total_realized = sum(e.realized_pnl.value for e in entries if e.realized_pnl)
         total_dividends = sum(
             e.dividend_return.value for e in entries if e.dividend_return
         )
@@ -323,9 +371,7 @@ class Portfolio:
     async def _realized_for(
         self, isin: str, sec_accs: list[str], tx_index: dict
     ) -> RealizedPnl:
-        rows = await asyncio.to_thread(
-            self._client.fetch_realized_pnl, isin, sec_accs
-        )
+        rows = await asyncio.to_thread(self._client.fetch_realized_pnl, isin, sec_accs)
         if rows:
             # Sum across securities accounts into one figure for the instrument.
             realized = _sum_money([r["realized_pnl"] for r in rows])
@@ -349,22 +395,32 @@ class Portfolio:
         )
 
     async def sold_assets(self) -> list[SoldAsset]:
-        """Instruments with a SELL leg that are no longer held."""
+        """Instruments with a SELL leg that are no longer held.
+
+        Uses the same two narrow filtered walks as ``realized_pnl`` (trade
+        events for sold-off detection, ``categoryIds`` for the 404-prone
+        classes' cost basis) instead of the full timeline.
+        """
         pairs = await self._account_pairs()
         sec_accs = self._sec_acc_nos(pairs)
-        txs = await self.transactions()
         positions = await self.positions()
 
+        trade_txs = await self.transactions(event_types=_REALIZED_TRADE_EVENT_TYPES)
+        fallback_txs = await self.transactions(categories=_REALIZED_FALLBACK_CATEGORIES)
+
         held = {p.isin for p in positions if p.isin}
-        tx_index = _index_transactions(txs)
-        names = _isin_names(txs)
+        sold_index = _index_transactions(trade_txs + fallback_txs)
+        names = _isin_names(trade_txs + fallback_txs)
+        fallback_index = _index_transactions(fallback_txs)
         fully_sold = sorted(
-            isin for isin, agg in tx_index.items() if agg["sells"] and isin not in held
+            isin
+            for isin, agg in sold_index.items()
+            if agg["sells"] and isin not in held
         )
 
         out: list[SoldAsset] = []
         for isin in fully_sold:
-            r = await self._realized_for(isin, sec_accs, tx_index)
+            r = await self._realized_for(isin, sec_accs, fallback_index)
             out.append(
                 SoldAsset(
                     isin=isin,
@@ -389,7 +445,9 @@ class Portfolio:
         accounts = await self.accounts()
         positions, rates = await self._positions_with_rates()
         cash = await self.cash()
-        realized = await self.realized_pnl()
+        # Reuse the positions just fetched — realized_pnl only needs them for
+        # the held-ISIN set, so this avoids a second full position walk.
+        realized = await self.realized_pnl(positions=positions)
 
         total_value = sum(p.value_eur for p in positions)
         total_cost = sum(p.cost_basis_eur for p in positions)
@@ -427,7 +485,9 @@ class Portfolio:
     @asynccontextmanager
     async def stream(self, **open_session_kwargs):
         """Async context manager yielding a :class:`PortfolioStream`."""
-        async with self._client.open_session(self._token, **open_session_kwargs) as session:
+        async with self._client.open_session(
+            self._token, **open_session_kwargs
+        ) as session:
             yield PortfolioStream(session)
 
 

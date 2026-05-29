@@ -3,85 +3,187 @@
 import asyncio
 
 from traderepublic_sync.v1 import Portfolio
+from traderepublic_sync.v1.portfolio import (
+    _REALIZED_FALLBACK_CATEGORIES,
+    _REALIZED_TRADE_EVENT_TYPES,
+)
 
 
 # ── fake low-level client ────────────────────────────────────────────────────
 
 _PAIRS = [
-    {"securitiesAccountNumber": "SEC1", "cashAccountNumber": "CASH1",
-     "productType": "DEFAULT", "currency": "EUR"},
-    {"securitiesAccountNumber": "SEC2", "cashAccountNumber": "CASH2",
-     "productType": "TAX_WRAPPER", "currency": "EUR"},
+    {
+        "securitiesAccountNumber": "SEC1",
+        "cashAccountNumber": "CASH1",
+        "productType": "DEFAULT",
+        "currency": "EUR",
+    },
+    {
+        "securitiesAccountNumber": "SEC2",
+        "cashAccountNumber": "CASH2",
+        "productType": "TAX_WRAPPER",
+        "currency": "EUR",
+    },
 ]
 
 _ASSETS = {
     "SEC1": [
-        {"isin": "US1", "asset_name": "US Stock", "quantity": 10, "currency": "USD",
-         "average_buy_in": 90.0, "current_price": 116.35,
-         "instrument_type": "stock", "category": "stocksAndETFs"},
-        {"isin": "US2", "asset_name": "US Bond", "quantity": 1000, "currency": "USD",
-         "average_buy_in": 0.95, "current_price": 116.35,
-         "instrument_type": "bond", "category": "bonds"},
-        {"isin": "NOPX", "asset_name": "No Price", "quantity": 3, "currency": "EUR",
-         "average_buy_in": 10.0, "current_price": None,
-         "instrument_type": "stock", "category": "stocksAndETFs"},
+        {
+            "isin": "US1",
+            "asset_name": "US Stock",
+            "quantity": 10,
+            "currency": "USD",
+            "average_buy_in": 90.0,
+            "current_price": 116.35,
+            "instrument_type": "stock",
+            "category": "stocksAndETFs",
+        },
+        {
+            "isin": "US2",
+            "asset_name": "US Bond",
+            "quantity": 1000,
+            "currency": "USD",
+            "average_buy_in": 0.95,
+            "current_price": 116.35,
+            "instrument_type": "bond",
+            "category": "bonds",
+        },
+        {
+            "isin": "NOPX",
+            "asset_name": "No Price",
+            "quantity": 3,
+            "currency": "EUR",
+            "average_buy_in": 10.0,
+            "current_price": None,
+            "instrument_type": "stock",
+            "category": "stocksAndETFs",
+        },
     ],
     "SEC2": [
-        {"isin": "IE1", "asset_name": "ETF", "quantity": 5, "currency": "EUR",
-         "average_buy_in": 200.0, "current_price": 210.0,
-         "instrument_type": "fund", "category": "stocksAndETFs"},
-        {"isin": "PE1", "asset_name": "Apollo", "quantity": 2, "currency": "EUR",
-         "average_buy_in": 100.0, "current_price": 108.0,
-         "instrument_type": "privateFund", "category": "privateMarkets"},
-        {"isin": "XF1", "asset_name": "BTC", "quantity": 0.5, "currency": "EUR",
-         "average_buy_in": 40000.0, "current_price": 50000.0,
-         "instrument_type": "crypto", "category": "cryptos"},
+        {
+            "isin": "IE1",
+            "asset_name": "ETF",
+            "quantity": 5,
+            "currency": "EUR",
+            "average_buy_in": 200.0,
+            "current_price": 210.0,
+            "instrument_type": "fund",
+            "category": "stocksAndETFs",
+        },
+        {
+            "isin": "PE1",
+            "asset_name": "Apollo",
+            "quantity": 2,
+            "currency": "EUR",
+            "average_buy_in": 100.0,
+            "current_price": 108.0,
+            "instrument_type": "privateFund",
+            "category": "privateMarkets",
+        },
+        {
+            "isin": "XF1",
+            "asset_name": "BTC",
+            "quantity": 0.5,
+            "currency": "EUR",
+            "average_buy_in": 40000.0,
+            "current_price": 50000.0,
+            "instrument_type": "crypto",
+            "category": "cryptos",
+        },
     ],
 }
 
 _PM = {
     "SEC2": [
-        {"instrumentId": "PE1",
-         "pendingAmounts": [{"amount": {"value": 50.0, "currency": "EUR"},
-                             "executionDate": "2026-12-01"}]},
+        {
+            "instrumentId": "PE1",
+            "pendingAmounts": [
+                {
+                    "amount": {"value": 50.0, "currency": "EUR"},
+                    "executionDate": "2026-12-01",
+                }
+            ],
+        },
     ],
 }
 
 _TXS = [
-    {"transaction_type": "SELL", "asset_isin": "USSOLD", "asset_name": "Sold Stock",
-     "credit_amount": 383.0, "debit_amount": 10},
-    {"transaction_type": "PURCHASE", "asset_isin": "USSOLD", "asset_name": "Sold Stock",
-     "debit_amount": 300.0, "credit_amount": 10},
-    {"transaction_type": "SELL", "asset_isin": "XFSOLD", "asset_name": "Sold Crypto",
-     "credit_amount": 1200.0},
-    {"transaction_type": "PURCHASE", "asset_isin": "XFSOLD", "asset_name": "Sold Crypto",
-     "debit_amount": 1000.0},
+    {
+        "transaction_type": "SELL",
+        "asset_isin": "USSOLD",
+        "asset_name": "Sold Stock",
+        "credit_amount": 383.0,
+        "debit_amount": 10,
+    },
+    {
+        "transaction_type": "PURCHASE",
+        "asset_isin": "USSOLD",
+        "asset_name": "Sold Stock",
+        "debit_amount": 300.0,
+        "credit_amount": 10,
+    },
+    {
+        "transaction_type": "SELL",
+        "asset_isin": "XFSOLD",
+        "asset_name": "Sold Crypto",
+        "credit_amount": 1200.0,
+    },
+    {
+        "transaction_type": "PURCHASE",
+        "asset_isin": "XFSOLD",
+        "asset_name": "Sold Crypto",
+        "debit_amount": 1000.0,
+    },
 ]
 
 # taxes/pnl is equities/funds-only; crypto (XFSOLD) returns nothing → timeline.
 _PNL = {
-    "US1": [{"sec_acc_no": "SEC1", "instrument_id": "US1", "realized_pnl": None,
-             "dividend_return": {"value": 4.81, "currency": "EUR"}, "last_updated": None}],
-    "USSOLD": [{"sec_acc_no": "SEC1", "instrument_id": "USSOLD",
-                "realized_pnl": {"value": 83.0, "currency": "EUR"},
-                "dividend_return": None, "last_updated": None}],
+    "US1": [
+        {
+            "sec_acc_no": "SEC1",
+            "instrument_id": "US1",
+            "realized_pnl": None,
+            "dividend_return": {"value": 4.81, "currency": "EUR"},
+            "last_updated": None,
+        }
+    ],
+    "USSOLD": [
+        {
+            "sec_acc_no": "SEC1",
+            "instrument_id": "USSOLD",
+            "realized_pnl": {"value": 83.0, "currency": "EUR"},
+            "dividend_return": None,
+            "last_updated": None,
+        }
+    ],
 }
 
 
 class FakeClient:
     _session_token = "tok"
 
+    def __init__(self):
+        self.tx_calls = []
+
     async def fetch_account_pairs(self, token=None):
         return _PAIRS
 
     async def fetch_account_list(self, token=None):
         return [
-            {"account_name": "Trade Republic CTO", "account_type": "BROKERAGE",
-             "currency": "EUR", "securities_account_number": "SEC1",
-             "cash_account_number": "CASH1"},
-            {"account_name": "Trade Republic PEA", "account_type": "BROKERAGE",
-             "currency": "EUR", "securities_account_number": "SEC2",
-             "cash_account_number": "CASH2"},
+            {
+                "account_name": "Trade Republic CTO",
+                "account_type": "BROKERAGE",
+                "currency": "EUR",
+                "securities_account_number": "SEC1",
+                "cash_account_number": "CASH1",
+            },
+            {
+                "account_name": "Trade Republic PEA",
+                "account_type": "BROKERAGE",
+                "currency": "EUR",
+                "securities_account_number": "SEC2",
+                "cash_account_number": "CASH2",
+            },
         ]
 
     async def fetch_asset_list(self, token=None, sec_acc_no=None):
@@ -97,13 +199,21 @@ class FakeClient:
 
     async def fetch_cash_balance(self, token=None, account_number=None):
         amounts = {"CASH1": 1000.0, "CASH2": 500.0}
-        return [{"accountNumber": account_number,
-                 "amount": amounts.get(account_number), "currencyId": "EUR"}]
+        return [
+            {
+                "accountNumber": account_number,
+                "amount": amounts.get(account_number),
+                "currencyId": "EUR",
+            }
+        ]
 
     async def fetch_private_markets(self, sec_acc_no, token=None):
         return _PM.get(sec_acc_no, [])
 
-    async def fetch_transactions(self, token=None, since=None, until=None):
+    async def fetch_transactions(
+        self, token=None, since=None, until=None, event_types=None, categories=None
+    ):
+        self.tx_calls.append({"event_types": event_types, "categories": categories})
         return {"transactions": _TXS, "raw_items": []}
 
     def fetch_realized_pnl(self, instrument_id, sec_acc_nos=None):
@@ -151,7 +261,7 @@ def test_multi_account_aggregation():
     pos = asyncio.run(_pf().positions())
     isins = {p.isin for p in pos}
     assert {"US1", "US2", "NOPX"} <= isins  # SEC1
-    assert {"IE1", "PE1", "XF1"} <= isins   # SEC2
+    assert {"IE1", "PE1", "XF1"} <= isins  # SEC2
     secs = {p.sec_acc_no for p in pos}
     assert secs == {"SEC1", "SEC2"}
 
@@ -161,7 +271,7 @@ def test_multi_account_aggregation():
 
 def test_pe_value_excludes_committed_but_exposes_it():
     pe = _by_isin(asyncio.run(_pf().positions()))["PE1"]
-    assert pe.value_eur == 216.0          # 2 × 108 NAV, committed NOT folded in
+    assert pe.value_eur == 216.0  # 2 × 108 NAV, committed NOT folded in
     assert pe.cost_basis_eur == 200.0
     assert pe.committed_eur == 50.0
     assert len(pe.committed_schedule) == 1
@@ -176,7 +286,9 @@ def test_snapshot_committed_flag_moves_only_totals():
     assert round(on.total_value_eur - off.total_value_eur, 2) == 50.0
     assert round(on.total_cost_eur - off.total_cost_eur, 2) == 50.0
     # Unrealized P&L identical: committed nets out (added to both sides).
-    assert round(on.total_unrealized_pnl_eur, 2) == round(off.total_unrealized_pnl_eur, 2)
+    assert round(on.total_unrealized_pnl_eur, 2) == round(
+        off.total_unrealized_pnl_eur, 2
+    )
     assert off.total_committed_eur == on.total_committed_eur == 50.0
 
 
@@ -191,6 +303,18 @@ def test_realized_pnl_totals_mix_tr_and_timeline():
     by_isin = {e.isin: e for e in rp["instruments"]}
     assert by_isin["XFSOLD"].source == "timeline"
     assert by_isin["USSOLD"].source == "tr"
+
+
+def test_realized_pnl_uses_two_filtered_walks():
+    # Instead of one unbounded walk, realized_pnl issues a trade-event walk
+    # (sold-off detection) and a categoryIds walk (404-class cost basis).
+    pf = _pf()
+    asyncio.run(pf.realized_pnl())
+    calls = pf._client.tx_calls
+    assert {"event_types": _REALIZED_TRADE_EVENT_TYPES, "categories": None} in calls
+    assert {"event_types": None, "categories": _REALIZED_FALLBACK_CATEGORIES} in calls
+    # No unfiltered full-history walk in the realized path.
+    assert {"event_types": None, "categories": None} not in calls
 
 
 def test_sold_assets_set_diff_and_fallback():

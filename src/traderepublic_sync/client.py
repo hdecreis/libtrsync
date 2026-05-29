@@ -323,6 +323,7 @@ class TRClient:
         and retries the connect once. Any other connection-level failure is
         re-raised as :class:`TransientError`.
         """
+
         async def _connect():
             try:
                 return await websockets.connect(TR_WS_URL)
@@ -370,6 +371,7 @@ class TRClient:
         On :class:`WafExpired`, the ``on_waf_expired`` hook (if set) is
         invoked and the request is retried once.
         """
+
         def _do():
             try:
                 resp = self._http.post(
@@ -400,6 +402,7 @@ class TRClient:
 
     def request_sms(self, process_id: str) -> bool:
         """Request 2FA code via SMS instead of push notification."""
+
         def _do():
             try:
                 resp = self._http.post(
@@ -421,6 +424,7 @@ class TRClient:
 
     def verify_2fa(self, process_id: str, code: str) -> str:
         """Verify 2FA code. Returns session token on success."""
+
         def _do():
             try:
                 resp = self._http.post(
@@ -476,6 +480,8 @@ class TRClient:
         since: datetime | str | None = None,
         until: datetime | str | None = None,
         since_id: str | None = None,
+        event_types: list[str] | None = None,
+        categories: list[str] | None = None,
     ) -> dict:
         """Fetch transactions + details via WebSocket, optionally bounded.
 
@@ -497,6 +503,16 @@ class TRClient:
                 The boundary item itself is **not** included. IDs are
                 compared after :func:`normalize_tr_id` so callers can pass
                 either the raw or normalized form.
+            event_types: server-side ``types`` filter — only items whose
+                ``eventType`` is in this list are returned (e.g.
+                ``["TRADING_TRADE_EXECUTED", "INTEREST_PAYOUT"]``). Cuts both
+                the page count and the per-item ``timelineDetailV2`` round
+                trips. ``None`` (default) fetches every event type.
+            categories: server-side ``categoryIds`` filter — restrict to
+                asset classes. Values are an enum, UPPERCASE, e.g.
+                ``["CRYPTO", "BOND", "STOCK", "DERIVATIVE", "PRIVATE_MARKETS",
+                "MUTUAL_FUND"]``; an unrecognised value makes TR reject the
+                whole request. ``None`` (default) fetches every class.
 
         Returns a dict with:
             - ``transactions``: list of dual-legged transaction dicts (deduped).
@@ -527,6 +543,10 @@ class TRClient:
             page = 0
             while not stop_walk:
                 payload = {"type": "timelineTransactions", "token": token}
+                if event_types:
+                    payload["types"] = event_types
+                if categories:
+                    payload["categoryIds"] = categories
                 if after_cursor:
                     payload["after"] = after_cursor
 
@@ -595,7 +615,11 @@ class TRClient:
                     break
 
         dual_legged_transactions = deduplicate_pea(dual_legged_transactions)
-        logger.info("%d raw items -> %d dual-legged transactions", len(raw_items), len(dual_legged_transactions))
+        logger.info(
+            "%d raw items -> %d dual-legged transactions",
+            len(raw_items),
+            len(dual_legged_transactions),
+        )
 
         return {
             "transactions": dual_legged_transactions,
@@ -691,7 +715,13 @@ class TRClient:
                 msg_id += 1
                 return await _ws_sub(ws, msg_id, payload, timeout)
 
-            portfolio = await sub_recv({"type": "compactPortfolioByTypeV2", "token": token, "secAccNo": sec_acc_no})
+            portfolio = await sub_recv(
+                {
+                    "type": "compactPortfolioByTypeV2",
+                    "token": token,
+                    "secAccNo": sec_acc_no,
+                }
+            )
             positions = _flatten_portfolio_positions(portfolio)
             logger.info("compactPortfolioByTypeV2: %d positions", len(positions))
 
@@ -701,9 +731,9 @@ class TRClient:
                 if not isin:
                     continue
 
-                quantity     = _to_float(pos.get("netSize", 0))
+                quantity = _to_float(pos.get("netSize", 0))
                 virtual_size = _to_float(pos.get("virtualSize"))
-                avg_buy_in   = _to_float(pos.get("averageBuyIn"))
+                avg_buy_in = _to_float(pos.get("averageBuyIn"))
 
                 # V2 carries the display name in the portfolio payload —
                 # skip the per-position ``instrument`` round-trip when it's
@@ -711,23 +741,42 @@ class TRClient:
                 # old compactPortfolio shape (no ``name`` field).
                 name = pos.get("name")
                 if not name:
-                    instrument = await sub_recv({"type": "instrument", "id": isin, "jurisdiction": "FR", "token": token})
+                    instrument = await sub_recv(
+                        {
+                            "type": "instrument",
+                            "id": isin,
+                            "jurisdiction": "FR",
+                            "token": token,
+                        }
+                    )
                     name = instrument.get("name", isin)
 
-                home = await sub_recv({"type": "homeInstrumentExchange", "id": isin, "token": token})
+                home = await sub_recv(
+                    {"type": "homeInstrumentExchange", "id": isin, "token": token}
+                )
                 exchange_id = home.get("id") or home.get("exchangeId")
                 # currency may arrive as {"id": "EUR", "name": "..."} or plain string
                 raw_currency = home.get("currency", "EUR")
-                currency = raw_currency.get("id") if isinstance(raw_currency, dict) else raw_currency
+                currency = (
+                    raw_currency.get("id")
+                    if isinstance(raw_currency, dict)
+                    else raw_currency
+                )
 
                 last_price = prev_close = bid = ask = open_price = None
                 if exchange_id:
-                    ticker = await sub_recv({"type": "ticker", "id": f"{isin}.{exchange_id}", "token": token})
-                    last_price  = _to_float((ticker.get("last") or {}).get("price"))
-                    prev_close  = _to_float((ticker.get("pre")  or {}).get("price"))
-                    bid         = _to_float((ticker.get("bid")  or {}).get("price"))
-                    ask         = _to_float((ticker.get("ask")  or {}).get("price"))
-                    open_price  = _to_float((ticker.get("open") or {}).get("price"))
+                    ticker = await sub_recv(
+                        {
+                            "type": "ticker",
+                            "id": f"{isin}.{exchange_id}",
+                            "token": token,
+                        }
+                    )
+                    last_price = _to_float((ticker.get("last") or {}).get("price"))
+                    prev_close = _to_float((ticker.get("pre") or {}).get("price"))
+                    bid = _to_float((ticker.get("bid") or {}).get("price"))
+                    ask = _to_float((ticker.get("ask") or {}).get("price"))
+                    open_price = _to_float((ticker.get("open") or {}).get("price"))
 
                 asset: dict = {
                     "isin": isin,
@@ -750,11 +799,19 @@ class TRClient:
                 if last_price is not None and quantity:
                     asset["current_value"] = round(quantity * last_price, 2)
                 if last_price is not None and prev_close:
-                    asset["daily_trend_pct"] = round((last_price - prev_close) / prev_close * 100, 4)
-                    asset["daily_trend_eur"] = round((last_price - prev_close) * quantity, 2)
+                    asset["daily_trend_pct"] = round(
+                        (last_price - prev_close) / prev_close * 100, 4
+                    )
+                    asset["daily_trend_eur"] = round(
+                        (last_price - prev_close) * quantity, 2
+                    )
                 if last_price is not None and avg_buy_in:
-                    asset["since_buy_pct"] = round((last_price - avg_buy_in) / avg_buy_in * 100, 4)
-                    asset["since_buy_eur"] = round((last_price - avg_buy_in) * quantity, 2)
+                    asset["since_buy_pct"] = round(
+                        (last_price - avg_buy_in) / avg_buy_in * 100, 4
+                    )
+                    asset["since_buy_eur"] = round(
+                        (last_price - avg_buy_in) * quantity, 2
+                    )
 
                 assets.append(asset)
 
@@ -860,13 +917,21 @@ class TRClient:
                 msg_id += 1
                 return await _ws_sub(ws, msg_id, payload, timeout)
 
-            instrument = await sub_recv({"type": "instrument", "id": isin, "jurisdiction": "FR", "token": token})
+            instrument = await sub_recv(
+                {"type": "instrument", "id": isin, "jurisdiction": "FR", "token": token}
+            )
             name = instrument.get("name", isin)
 
-            home = await sub_recv({"type": "homeInstrumentExchange", "id": isin, "token": token})
+            home = await sub_recv(
+                {"type": "homeInstrumentExchange", "id": isin, "token": token}
+            )
             exchange_id = home.get("id") or home.get("exchangeId")
             raw_currency = home.get("currency", "EUR")
-            currency = raw_currency.get("id") if isinstance(raw_currency, dict) else raw_currency
+            currency = (
+                raw_currency.get("id")
+                if isinstance(raw_currency, dict)
+                else raw_currency
+            )
 
             result: dict = {
                 "isin": isin,
@@ -881,12 +946,18 @@ class TRClient:
             }
 
             if exchange_id:
-                ticker = await sub_recv({"type": "ticker", "id": f"{isin}.{exchange_id}", "token": token})
-                result["current_price"] = _to_float((ticker.get("last") or {}).get("price"))
-                result["previous_close"] = _to_float((ticker.get("pre")  or {}).get("price"))
-                result["bid"]            = _to_float((ticker.get("bid")  or {}).get("price"))
-                result["ask"]            = _to_float((ticker.get("ask")  or {}).get("price"))
-                result["open"]           = _to_float((ticker.get("open") or {}).get("price"))
+                ticker = await sub_recv(
+                    {"type": "ticker", "id": f"{isin}.{exchange_id}", "token": token}
+                )
+                result["current_price"] = _to_float(
+                    (ticker.get("last") or {}).get("price")
+                )
+                result["previous_close"] = _to_float(
+                    (ticker.get("pre") or {}).get("price")
+                )
+                result["bid"] = _to_float((ticker.get("bid") or {}).get("price"))
+                result["ask"] = _to_float((ticker.get("ask") or {}).get("price"))
+                result["open"] = _to_float((ticker.get("open") or {}).get("price"))
 
         return result
 
@@ -925,6 +996,7 @@ class TRClient:
 
         refresher = None
         if auto_refresh and self.auth is not None:
+
             async def refresher() -> str:
                 # refresh_session() is sync (requests) — keep it off the
                 # event loop so the WS reader isn't blocked.
@@ -996,7 +1068,11 @@ class TRClient:
                 data = await _ws_sub(
                     ws,
                     1,
-                    {"type": "privateMarketsPositions", "token": token, "secAccNo": sec_acc_no},
+                    {
+                        "type": "privateMarketsPositions",
+                        "token": token,
+                        "secAccNo": sec_acc_no,
+                    },
                 )
             except TransientError:
                 # No PE on this account → TR rejects the sub. Not an error.
@@ -1116,7 +1192,9 @@ class TRClient:
             for cu in wanted:
                 msg_id += 1
                 ticker = await _ws_sub(
-                    ws, msg_id, {"type": "ticker", "id": FX_INSTRUMENTS[cu], "token": token}
+                    ws,
+                    msg_id,
+                    {"type": "ticker", "id": FX_INSTRUMENTS[cu], "token": token},
                 )
                 bid = _to_float((ticker.get("bid") or {}).get("price"))
                 ask = _to_float((ticker.get("ask") or {}).get("price"))
@@ -1129,7 +1207,7 @@ class TRClient:
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 _PRODUCT_TYPE_MAP = {
-    "DEFAULT":     ("Trade Republic CTO", "BROKERAGE"),
+    "DEFAULT": ("Trade Republic CTO", "BROKERAGE"),
     "TAX_WRAPPER": ("Trade Republic PEA", "BROKERAGE"),
 }
 
@@ -1140,24 +1218,30 @@ def _pairs_to_accounts(pairs: list[dict]) -> list[dict]:
     seen_cash: set[str] = set()
     for pair in pairs:
         product_type = pair.get("productType", "DEFAULT")
-        name, acct_type = _PRODUCT_TYPE_MAP.get(product_type, ("Trade Republic", "BROKERAGE"))
-        accounts.append({
-            "account_name": name,
-            "account_type": acct_type,
-            "currency": pair.get("currency", "EUR"),
-            "securities_account_number": pair.get("securitiesAccountNumber"),
-            "cash_account_number": pair.get("cashAccountNumber"),
-        })
+        name, acct_type = _PRODUCT_TYPE_MAP.get(
+            product_type, ("Trade Republic", "BROKERAGE")
+        )
+        accounts.append(
+            {
+                "account_name": name,
+                "account_type": acct_type,
+                "currency": pair.get("currency", "EUR"),
+                "securities_account_number": pair.get("securitiesAccountNumber"),
+                "cash_account_number": pair.get("cashAccountNumber"),
+            }
+        )
         cash_num = pair.get("cashAccountNumber")
         if cash_num and cash_num not in seen_cash:
             seen_cash.add(cash_num)
-            accounts.append({
-                "account_name": "Trade Republic",
-                "account_type": "CASH",
-                "currency": pair.get("currency", "EUR"),
-                "securities_account_number": None,
-                "cash_account_number": cash_num,
-            })
+            accounts.append(
+                {
+                    "account_name": "Trade Republic",
+                    "account_type": "CASH",
+                    "currency": pair.get("currency", "EUR"),
+                    "securities_account_number": None,
+                    "cash_account_number": cash_num,
+                }
+            )
     return accounts
 
 
@@ -1189,12 +1273,15 @@ async def _ws_sub(ws, msg_id: int, payload: dict, timeout: float = 5.0) -> dict:
     except asyncio.TimeoutError:
         pass
     finally:
+        # Send unsub but don't wait for a reply. TR sends nothing back for
+        # most subscription types, so the old fixed 1s drain here was almost
+        # pure dead time (~1s × every sub). Any late/ack frame left buffered
+        # is harmless: each sub uses a unique, incrementing ``msg_id`` and the
+        # read loop above matches strictly on it (skipping up to 20 stray
+        # frames), and anything still buffered is dropped when the session
+        # closes.
         try:
             await ws.send(f"unsub {msg_id}")
-            try:
-                await asyncio.wait_for(ws.recv(), timeout=1.0)
-            except asyncio.TimeoutError:
-                pass
         except Exception:
             # Connection may already be dead; nothing more we can do here.
             pass
@@ -1232,7 +1319,7 @@ def _flatten_portfolio_positions(portfolio: dict) -> list[dict]:
         if not isinstance(group, dict):
             continue
         category = group.get("categoryType") or group.get("type")
-        for raw in (group.get("positions") or group.get("instruments") or []):
+        for raw in group.get("positions") or group.get("instruments") or []:
             if not isinstance(raw, dict):
                 continue
             out.append(_normalize_v2_position(raw, category))
@@ -1277,7 +1364,9 @@ def _coerce_datetime(value):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     if isinstance(value, str):
         return _parse_iso_timestamp(value)
-    raise TypeError(f"Expected None, datetime, or ISO string; got {type(value).__name__}")
+    raise TypeError(
+        f"Expected None, datetime, or ISO string; got {type(value).__name__}"
+    )
 
 
 _ISO_TRAILING_TZ_RE = re.compile(r"([+-]\d{2})(\d{2})$")
