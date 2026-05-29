@@ -1,5 +1,8 @@
 """Connection state holder"""
 
+import base64
+import binascii
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -42,6 +45,49 @@ class ConnectionState:
             return datetime.now(timezone.utc) < expires
         except ValueError:
             return False
+
+    def is_session_valid(self, skew_seconds: float = 15.0) -> bool:
+        """True if the cached ``session_token`` JWT is present and not expiring.
+
+        The twin of :meth:`is_waf_valid` for the ``tr_session`` cookie. The
+        token *is* a JWT carrying a short (~5 min) ``exp``; we decode it
+        locally — no signature check — purely to decide whether a no-2FA reuse
+        is worth attempting before spending a network round-trip.
+
+        Returns ``False`` when there is no token. When the token is present but
+        its ``exp`` can't be decoded we return ``True`` ("can't tell locally —
+        let the server decide") rather than forcing an unnecessary re-login.
+        """
+        if not self.session_token:
+            return False
+        exp = self.session_expiry_from_token(self.session_token)
+        if exp is None:
+            return True  # undecodable — don't reject a token we merely can't parse
+        try:
+            expires = datetime.fromisoformat(exp)
+        except ValueError:
+            return True
+        return datetime.now(timezone.utc) < (expires - timedelta(seconds=skew_seconds))
+
+    @staticmethod
+    def session_expiry_from_token(token: str | None) -> Optional[str]:
+        """Return the ``tr_session`` JWT ``exp`` as an ISO-8601 UTC string.
+
+        ``None`` if the token is missing or its payload can't be decoded. No
+        signature verification — this is only for local expiry bookkeeping.
+        """
+        if not token or token.count(".") < 2:
+            return None
+        try:
+            payload_b64 = token.split(".")[1]
+            payload_b64 += "=" * (-len(payload_b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+            exp = payload.get("exp")
+            if exp is None:
+                return None
+            return datetime.fromtimestamp(int(exp), tz=timezone.utc).isoformat()
+        except (ValueError, binascii.Error, TypeError, json.JSONDecodeError):
+            return None
 
     @staticmethod
     def waf_expiry_from_token(token: str) -> str:

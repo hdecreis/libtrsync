@@ -33,7 +33,7 @@ from ._classify import (
     classify_ws_connect_error,
     classify_ws_error_frame,
 )
-from .constants import TR_WS_URL, WS_CONNECT_PAYLOAD
+from .constants import FX_INSTRUMENTS, TR_WS_URL, WS_CONNECT_PAYLOAD
 from .exceptions import (
     SessionExpired,
     TransientError,
@@ -402,15 +402,45 @@ class TRSession:
         return await self.subscribe("compactPortfolioByTypeV2", {"secAccNo": sec_acc_no}, callback)
 
     async def subscribe_cash(self, cash_acc_no: str, callback: Callable) -> int:
-        """Subscribe to live available cash updates.
+        """Subscribe to live available cash updates for a specific account.
 
         ``callback(data)`` receives frames with cash balance info.
+
+        The filter param is ``accountNumber``, **not** ``id``: TR treats an
+        ``id``-scoped ``availableCash`` sub as DEFAULT-scoped and returns the
+        *primary* account's balance for every subscription (so a second
+        account would show the first account's cash). ``accountNumber`` is
+        what TR's own web client sends.
         """
-        return await self.subscribe("availableCash", {"id": cash_acc_no}, callback)
+        return await self.subscribe(
+            "availableCash", {"accountNumber": cash_acc_no}, callback
+        )
 
     async def subscribe_transactions(self, cash_acc_no: str, callback: Callable) -> int:
-        """Subscribe to live transaction timeline updates."""
+        """Subscribe to live transaction timeline updates.
+
+        Note: ``timelineTransactions`` is account-global (the one-shot
+        ``fetch_transactions`` sends no account filter at all), so the
+        ``cash_acc_no`` is passed through as TR has historically accepted it.
+        """
         return await self.subscribe("timelineTransactions", {"id": cash_acc_no}, callback)
+
+    async def subscribe_fx(self, currency: str, callback: Callable) -> int:
+        """Subscribe to the live EUR conversion rate for ``currency``.
+
+        Uses the same ``ticker`` topic as instruments, against TR's synthetic
+        LSX currency instruments. ``callback(data)`` receives frames with
+        ``bid`` / ``ask`` price objects; the mid (``(bid+ask)/2``) is *units
+        of foreign currency per 1 EUR*. Only USD / GBP / CHF / JPY are wired
+        up by TR.
+        """
+        instrument = FX_INSTRUMENTS.get(currency.upper())
+        if not instrument:
+            raise ValueError(
+                f"No FX ticker instrument for {currency!r}; "
+                f"supported: {', '.join(sorted(FX_INSTRUMENTS))}"
+            )
+        return await self.subscribe("ticker", {"id": instrument}, callback)
 
     async def search_instrument(
         self,

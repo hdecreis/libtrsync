@@ -4,9 +4,17 @@ import logging
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from .auth import AuthStrategy, DeviceKeyAuth, WebRefreshAuth
-from .client import TRClient
+from .client import TRClient, fx_mid
 from .session import TRSession
-from .constants import DEFAULT_HEADERS, TR_API_BASE, TR_WS_URL, WS_CONNECT_PAYLOAD
+from .resume import resume_session
+from .constants import (
+    DEFAULT_HEADERS,
+    FX_INSTRUMENTS,
+    TR_API_BASE,
+    TR_API_PNL_PATH,
+    TR_WS_URL,
+    WS_CONNECT_PAYLOAD,
+)
 from .exceptions import (
     SessionExpired,
     TRAuthError,
@@ -44,8 +52,13 @@ __all__ = [
     "DeviceKeyAuth",
     # State
     "ConnectionState",
+    # Session resume policy
+    "resume_session",
     # WAF
     "get_waf_token",
+    # FX
+    "fx_mid",
+    "FX_INSTRUMENTS",
     # Parsing utilities
     "parse_currency_amount",
     "parse_detail_sections",
@@ -53,6 +66,7 @@ __all__ = [
     "normalize_tr_id",
     # Constants
     "TR_API_BASE",
+    "TR_API_PNL_PATH",
     "TR_WS_URL",
     "DEFAULT_HEADERS",
     "WS_CONNECT_PAYLOAD",

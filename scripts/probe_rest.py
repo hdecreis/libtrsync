@@ -8,23 +8,17 @@ return, lot cost basis, income analytics) live on plain HTTPS endpoints under
 authenticated request and pretty-prints the JSON so those endpoints can be
 confirmed against a live session before anyone depends on them.
 
-It is the REST counterpart to ``trdump probe`` (which speaks the WebSocket).
-For the FX rates — which *are* on the WebSocket, as ``ticker`` subs against the
-synthetic LSX instruments — use trdump instead, e.g.::
+Auth reuses libtrsync's own cached session (no 2FA): it loads
+``~/.config/libtrsync/session.json`` (override with ``LIBTRSYNC_SESSION``) —
+run ``examples/smoke_fetch_all.py`` first to authenticate.
 
-    trdump probe ticker '{"id": "LS000IUSD006.LSX"}' --protocol 34
-
-Auth is reused from trdump (``~/.config/trdump/session.json`` + credentials),
-so this must run somewhere both ``trdump`` and ``traderepublic_sync`` import —
-the simplest being trdump's own venv::
-
-    python /path/to/libtrsync/scripts/probe_rest.py pnl   --account 1 --instrument US0378331005
-    python .../probe_rest.py positions --account 1 --instrument US0378331005
-    python .../probe_rest.py income-events   --account 1 --instrument US0378331005
-    python .../probe_rest.py income-returns  --account 1 --instrument US0378331005 --shares 10 --amount 1000
-    python .../probe_rest.py get  "/api/v2/taxes/calculations"            # arbitrary GET
-    python .../probe_rest.py get  "/api/v2/taxes/pnl" -q secAccNo=ABC -q instrumentId=US0378331005
-    python .../probe_rest.py post "/api/v1/.../returns" --body '{"size":"10","amount":{...}}'
+    python scripts/probe_rest.py pnl   --account 1 --instrument US0378331005
+    python scripts/probe_rest.py positions --account 1 --instrument US0378331005
+    python scripts/probe_rest.py income-events   --account 1 --instrument US0378331005
+    python scripts/probe_rest.py income-returns  --account 1 --instrument US0378331005 --shares 10 --amount 1000
+    python scripts/probe_rest.py get  "/api/v2/taxes/calculations"            # arbitrary GET
+    python scripts/probe_rest.py get  "/api/v2/taxes/pnl" -q secAccNo=ABC -q instrumentId=US0378331005
+    python scripts/probe_rest.py post "/api/v1/.../returns" --body '{"size":"10","amount":{...}}'
 
 ``--account N`` is 1-indexed against ``accountPairs`` order and auto-fills the
 securities account number; pass ``--sec-acc-no`` to set it explicitly.
@@ -35,25 +29,38 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
+from pathlib import Path
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "src"))
+
+from traderepublic_sync import ConnectionState, TRAuthError, TRClient  # noqa: E402
+
+SESSION_FILE = Path(
+    os.environ.get("LIBTRSYNC_SESSION") or Path.home() / ".config/libtrsync/session.json"
+)
 
 
-def _authenticate(locale: str):
-    """Return an authenticated ``(TRClient, session_token)``.
-
-    Prefer trdump's ``authenticate()`` — it owns the credential prompt, the
-    cached ``session.json``, the WAF refresh and the no-2FA session refresh.
-    """
+def load_state() -> ConnectionState | None:
+    if not SESSION_FILE.exists():
+        return None
     try:
-        from trdump.auth import authenticate
-    except ImportError as e:
+        return ConnectionState(**json.loads(SESSION_FILE.read_text()))
+    except Exception:
+        return None
+
+
+def _authenticate() -> tuple[TRClient, str]:
+    """Return an authenticated ``(TRClient, session_token)`` from the cached session."""
+    saved = load_state()
+    if not saved or not saved.session_token:
         sys.exit(
-            f"Could not import trdump.auth ({e}).\n"
-            "Run this from an environment where both 'trdump' and "
-            "'traderepublic_sync' are importable (trdump's venv is easiest), "
-            "since auth/session handling is reused from trdump."
+            f"No saved session at {SESSION_FILE}. "
+            "Run examples/smoke_fetch_all.py first to authenticate."
         )
-    return authenticate(locale=locale)
+    return TRClient.from_state(saved), saved.session_token
 
 
 def _resolve_sec_acc_no(client, session_token: str, account_idx: int) -> str:
@@ -173,26 +180,29 @@ def main() -> int:
     p.add_argument("-q", "--query", action="append", help="raw mode: repeatable key=value")
     p.add_argument("--body", help="raw post: JSON body string")
 
-    p.add_argument("--locale", default="fr")
     p.add_argument("--timeout", type=float, default=15.0)
     args = p.parse_args()
 
-    client, session_token = _authenticate(args.locale)
+    client, session_token = _authenticate()
 
-    sec_acc_no = args.sec_acc_no
-    if sec_acc_no is None and args.account is not None:
-        sec_acc_no = _resolve_sec_acc_no(client, session_token, args.account)
+    try:
+        sec_acc_no = args.sec_acc_no
+        if sec_acc_no is None and args.account is not None:
+            sec_acc_no = _resolve_sec_acc_no(client, session_token, args.account)
 
-    verb = args.endpoint.lower()
-    if verb in ("get", "post"):
-        if not args.path:
-            sys.exit(f"{verb}: a raw path is required (e.g. {verb} /api/v2/taxes/calculations)")
-        body = json.loads(args.body) if args.body else None
-        method, path, params, body = verb.upper(), args.path, _parse_q(args.query), body
-    else:
-        method, path, params, body = _build_preset(verb, args, sec_acc_no)
+        verb = args.endpoint.lower()
+        if verb in ("get", "post"):
+            if not args.path:
+                sys.exit(f"{verb}: a raw path is required (e.g. {verb} /api/v2/taxes/calculations)")
+            body = json.loads(args.body) if args.body else None
+            method, path, params, body = verb.upper(), args.path, _parse_q(args.query), body
+        else:
+            method, path, params, body = _build_preset(verb, args, sec_acc_no)
 
-    status, parsed = _request(client, method, path, params, body, args.timeout)
+        status, parsed = _request(client, method, path, params, body, args.timeout)
+    except TRAuthError as e:
+        sys.exit(f"Auth failed — session probably expired. Re-run smoke_fetch_all.py. ({e})")
+
     print(f"HTTP {status}", file=sys.stderr)
     json.dump(parsed, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
