@@ -371,8 +371,9 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.4.1...HEAD
-[0.4.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.0
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.0
+[0.4.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.1
 [0.4.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.0
 [0.3.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.0
