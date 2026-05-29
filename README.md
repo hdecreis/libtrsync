@@ -88,6 +88,48 @@ client = TRClient(waf_token=state.waf_token, device_info=state.device_info)
 asyncio.run(client.fetch_transactions(state.session_token))
 ```
 
+## Portfolio API (`traderepublic_sync.v1`)
+
+A versioned facade that returns **typed, EUR-correct** portfolio data — the
+computation layer most consumers would otherwise hand-roll. It wraps
+`TRClient` and adds: valuation in EUR (bonds divided by 100 + FX,
+`averageBuyIn` kept as EUR), unrealized **and** realized P&L (sales +
+dividends via `GET /api/v2/taxes/pnl`, with a timeline fallback for
+crypto/bonds), fully-sold-asset discovery, and an FX source backed by TR's
+own LSX `ticker` rates.
+
+```python
+import asyncio
+from traderepublic_sync import TRClient
+from traderepublic_sync.v1 import Portfolio
+
+async def main():
+    client = TRClient(session_token=token)   # or TRClient.from_state(state)
+    pf = Portfolio(client)
+
+    snap = await pf.snapshot()               # include_committed=False by default
+    print(snap.total_value_eur, snap.total_unrealized_pnl_eur)
+    print(snap.total_realized_pnl_eur, snap.total_dividends_eur)
+
+    for s in await pf.sold_assets():
+        print(s.isin, s.realized_pnl, s.source)   # "tr" or "timeline"
+
+asyncio.run(main())
+```
+
+> The low-level `fetch_asset_list` returns metrics in the instrument's
+> **quote currency** (no FX, no bond ÷100) — fine as raw data, but use the
+> `v1` `Position` for EUR-correct value/P&L.
+
+**Private Markets:** held and committed are separate. `Position.value_eur`
+is the invested book only; `committed_eur` / `committed_schedule` carry
+uncalled capital. `snapshot(include_committed=True)` adds committed to both
+value and cost (so it shows in the value total but nets to 0 in P&L).
+
+Live equivalents are on `Portfolio.stream()` (`prices` / `positions` /
+`cash` / `transactions` / `fx`). See `docs/tr-undocumented-api.md` for the
+underlying REST/WS endpoints and `scripts/probe_rest.py` to probe them.
+
 ## Dual-legged transactions (optional)
 
 The mapping layer shapes TR events into a double-entry transaction schema

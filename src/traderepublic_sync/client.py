@@ -15,10 +15,14 @@ import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Union
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
+from typing import TYPE_CHECKING, Union
 
 import requests
 import websockets
+
+if TYPE_CHECKING:
+    from .state import ConnectionState
 
 from ._classify import (
     classify_http,
@@ -26,7 +30,14 @@ from ._classify import (
     classify_ws_connect_error,
     classify_ws_error_frame,
 )
-from .constants import DEFAULT_HEADERS, TR_API_BASE, TR_WS_URL, WS_CONNECT_PAYLOAD
+from .constants import (
+    DEFAULT_HEADERS,
+    FX_INSTRUMENTS,
+    TR_API_BASE,
+    TR_API_PNL_PATH,
+    TR_WS_URL,
+    WS_CONNECT_PAYLOAD,
+)
 from .exceptions import (
     SessionExpired,
     TRAuthError,
@@ -116,6 +127,24 @@ class TRClient:
         if session_cookies:
             self.load_cookies(session_cookies)
 
+    @classmethod
+    def from_state(cls, state: "ConnectionState", **kwargs) -> "TRClient":
+        """Build a client from a persisted :class:`ConnectionState`.
+
+        Carries over the WAF token, device fingerprint, locale, session
+        token, and the cookie jar (which holds TR's refresh cookie, so
+        :meth:`refresh_session` works without 2FA). Extra ``kwargs`` —
+        e.g. ``on_waf_expired`` / ``auth`` — are forwarded to ``__init__``.
+        """
+        return cls(
+            waf_token=state.waf_token,
+            device_info=state.device_info,
+            locale=state.locale or "fr",
+            session_token=state.session_token,
+            session_cookies=state.session_cookies or None,
+            **kwargs,
+        )
+
     @staticmethod
     def _generate_device_info() -> str:
         device_id = hashlib.sha512(uuid.uuid4().bytes).hexdigest()
@@ -166,6 +195,63 @@ class TRClient:
         if self.auth is None:
             raise SessionExpired("no auth strategy configured to refresh the session")
         return self.auth.refresh_session(self)
+
+    # ── Authenticated REST ─────────────────────────────────────────────
+
+    def _rest_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict | list | None = None,
+        json_body: dict | None = None,
+        allow_404: bool = False,
+        context: str = "",
+    ) -> requests.Response | None:
+        """Make an authenticated REST call against ``TR_API_BASE``.
+
+        Reuses the shared cookie jar (``tr_session`` + refresh cookie) and
+        the WAF/device headers — the exact auth the WS calls use. Recovers
+        like :meth:`login`: on :class:`WafExpired` it refreshes the WAF and
+        retries once; on :class:`SessionExpired` it mints a fresh token via
+        :meth:`refresh_session` (no 2FA) and retries once.
+
+        ``params`` accepts a dict or a list of ``(key, value)`` pairs (use a
+        list to repeat a key, e.g. one ``secAccNo`` per securities account).
+        When ``allow_404`` is set, a 404 returns ``None`` instead of raising
+        — TR uses 404 for "no data for this instrument" (e.g. ``taxes/pnl``
+        on crypto/bonds).
+        """
+        url = f"{TR_API_BASE}{path}"
+
+        def _do() -> requests.Response | None:
+            try:
+                resp = self._http.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json_body,
+                    headers=self._headers(),
+                )
+            except requests.RequestException as e:
+                raise classify_network_error(e, context=context) from e
+            if allow_404 and resp.status_code == 404:
+                return None
+            classify_http(resp, context=context)
+            return resp
+
+        try:
+            return _do()
+        except WafExpired:
+            if not self._refresh_waf_sync():
+                raise
+            return _do()
+        except SessionExpired:
+            # No-2FA refresh + one retry (mirrors the resume path). If the
+            # refresh cookie is dead, refresh_session() re-raises SessionExpired
+            # and the consumer must run login() + verify_2fa() again.
+            self.refresh_session()
+            return _do()
 
     # ── Refresh hooks ──────────────────────────────────────────────────
 
@@ -558,7 +644,9 @@ class TRClient:
         pairs = await self.fetch_account_pairs(session_token)
         return _pairs_to_accounts(pairs)
 
-    async def fetch_asset_list(self, session_token: str | None = None) -> list[dict]:
+    async def fetch_asset_list(
+        self, session_token: str | None = None, sec_acc_no: str | None = None
+    ) -> list[dict]:
         """Fetch current portfolio positions with live prices.
 
         Uses ``compactPortfolioByTypeV2`` (quantity + cost basis),
@@ -571,13 +659,24 @@ class TRClient:
         - ``daily_trend_eur`` = (current_price − previous_close) × quantity
         - ``since_buy_pct``   = (current_price − average_buy_in) / average_buy_in × 100
         - ``since_buy_eur``   = (current_price − average_buy_in) × quantity
+
+        ``sec_acc_no`` selects the securities account (default: the first one
+        from ``accountPairs``). Pass it explicitly to enumerate every account.
+
+        Caveat: these metrics are in the instrument's **quote currency** and
+        are **not** EUR-normalised — they do not divide a bond's
+        percent-of-par price by 100, nor apply FX, while ``average_buy_in`` is
+        already EUR. For EUR-correct value / P&L (incl. bonds and PE) use the
+        :mod:`traderepublic_sync.v1` ``Portfolio`` facade, which layers that
+        computation on top of these raw fields.
         """
         token = session_token or self._session_token
         if not token:
             raise TRAuthError("No session token.")
 
-        pairs = await self.fetch_account_pairs(token)
-        sec_acc_no = pairs[0]["securitiesAccountNumber"] if pairs else ""
+        if sec_acc_no is None:
+            pairs = await self.fetch_account_pairs(token)
+            sec_acc_no = pairs[0]["securitiesAccountNumber"] if pairs else ""
 
         async with self._ws_session() as ws:
             connect_payload = dict(WS_CONNECT_PAYLOAD)
@@ -842,8 +941,16 @@ class TRClient:
             refresh_interval=refresh_interval,
         )
 
-    async def fetch_cash_balance(self, session_token: str | None = None):
-        """Fetch available cash balance via WebSocket."""
+    async def fetch_cash_balance(
+        self, session_token: str | None = None, account_number: str | None = None
+    ):
+        """Fetch available cash balance via WebSocket.
+
+        Pass ``account_number`` (a ``cashAccountNumber`` from ``accountPairs``)
+        to scope the balance to a specific account. Without it TR returns the
+        primary account's cash. The filter key is ``accountNumber`` — an
+        ``id``-scoped sub is silently treated as DEFAULT-scoped by TR.
+        """
         token = session_token or self._session_token
         if not token:
             raise TRAuthError("No session token.")
@@ -855,6 +962,8 @@ class TRClient:
             await ws.recv()
 
             payload = {"type": "availableCash", "token": token}
+            if account_number:
+                payload["accountNumber"] = account_number
             await ws.send(f"sub 1 {json.dumps(payload)}")
             response = await ws.recv()
 
@@ -863,6 +972,158 @@ class TRClient:
             if start != -1 and end != -1:
                 return json.loads(response[start : end + 1])
             return _parse_ws_json(response)
+
+    async def fetch_private_markets(
+        self, sec_acc_no: str, session_token: str | None = None
+    ) -> list[dict]:
+        """Fetch Private-Markets positions for a securities account.
+
+        Returns the ``positions`` list from ``privateMarketsPositions`` (rich
+        PE data: ``instrumentName``, ``pendingAmounts``, ``positionReturn``,
+        ``bonusInfo``). Best-effort: accounts without any PE holding have TR
+        reject the subscription, in which case an empty list is returned.
+        """
+        token = session_token or self._session_token
+        if not token:
+            raise TRAuthError("No session token.")
+
+        async with self._ws_session() as ws:
+            connect_payload = dict(WS_CONNECT_PAYLOAD)
+            connect_payload["locale"] = self.locale
+            await ws.send(f"connect 34 {json.dumps(connect_payload)}")
+            await ws.recv()
+            try:
+                data = await _ws_sub(
+                    ws,
+                    1,
+                    {"type": "privateMarketsPositions", "token": token, "secAccNo": sec_acc_no},
+                )
+            except TransientError:
+                # No PE on this account → TR rejects the sub. Not an error.
+                return []
+        return data.get("positions") or []
+
+    def fetch_realized_pnl(
+        self,
+        instrument_id: str,
+        sec_acc_nos: list[str] | str | None = None,
+    ) -> list[dict]:
+        """Server-computed realized P&L + dividend return for one instrument.
+
+        Calls ``GET /api/v2/taxes/pnl`` (plain authenticated REST). Returns
+        one entry per securities account::
+
+            [{"sec_acc_no", "instrument_id",
+              "realized_pnl": {"value": float, "currency"} | None,
+              "dividend_return": {"value": float, "currency"} | None,
+              "last_updated": str | None}, …]
+
+        ``instrument_id`` is the **bare ISIN** (e.g. ``US0378331005``), not
+        the WS ``ISIN.exchange`` form. ``sec_acc_nos`` defaults to every
+        securities account (resolved via ``accountPairs`` — in that case this
+        must be called outside a running event loop).
+
+        TR serves this for **equities/funds only**: crypto, bonds, and
+        fixed-savings return 404, surfaced here as an empty list. ``relative``
+        percentages are not populated by TR, so only absolute amounts are
+        returned. Both legs are nullable (``None`` until a realised
+        event / dividend exists).
+        """
+        if sec_acc_nos is None:
+            pairs = asyncio.run(self.fetch_account_pairs())
+            sec_acc_nos = [
+                p["securitiesAccountNumber"]
+                for p in pairs
+                if p.get("securitiesAccountNumber")
+            ]
+        elif isinstance(sec_acc_nos, str):
+            sec_acc_nos = [sec_acc_nos]
+
+        params: list[tuple[str, str]] = [("secAccNo", s) for s in sec_acc_nos]
+        params.append(("instrumentId", instrument_id))
+
+        resp = self._rest_request(
+            "GET", TR_API_PNL_PATH, params=params, allow_404=True, context="taxes/pnl"
+        )
+        if resp is None:
+            return []
+        data = resp.json()
+        if isinstance(data, dict):
+            data = [data]
+        elif not isinstance(data, list):
+            return []
+
+        out = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            out.append(
+                {
+                    "sec_acc_no": entry.get("secAccNo"),
+                    "instrument_id": entry.get("instrumentId") or instrument_id,
+                    "realized_pnl": _extract_money(entry.get("realizedPnL")),
+                    "dividend_return": _extract_money(entry.get("dividendReturn")),
+                    "last_updated": entry.get("lastUpdatedTimestamp"),
+                }
+            )
+        return out
+
+    async def fetch_fx_rate(
+        self, currency: str, session_token: str | None = None
+    ) -> dict | None:
+        """Live EUR conversion rate for one currency (``None`` if unsupported).
+
+        See :meth:`fetch_fx_rates`.
+        """
+        rates = await self.fetch_fx_rates([currency], session_token)
+        return rates.get(currency.upper())
+
+    async def fetch_fx_rates(
+        self, currencies, session_token: str | None = None
+    ) -> dict[str, dict]:
+        """Live EUR conversion rates via the ``ticker`` topic (LSX instruments).
+
+        Returns ``{CCY: {"currency", "rate", "bid", "ask"}}``. ``rate`` is the
+        mid of bid/ask (6dp, HALF_EVEN; falls back to bid) — *units of foreign
+        currency per 1 EUR* (e.g. USD per EUR). ``EUR`` and any currency TR
+        doesn't publish (only USD/GBP/CHF/JPY are wired up) are skipped.
+        """
+        token = session_token or self._session_token
+        if not token:
+            raise TRAuthError("No session token.")
+
+        wanted: list[str] = []
+        for c in currencies:
+            cu = (c or "").upper()
+            if cu in ("", "EUR") or cu in wanted:
+                continue
+            if cu not in FX_INSTRUMENTS:
+                logger.warning("No FX ticker instrument for %s; skipping", cu)
+                continue
+            wanted.append(cu)
+
+        out: dict[str, dict] = {}
+        if not wanted:
+            return out
+
+        async with self._ws_session() as ws:
+            connect_payload = dict(WS_CONNECT_PAYLOAD)
+            connect_payload["locale"] = self.locale
+            await ws.send(f"connect 34 {json.dumps(connect_payload)}")
+            await ws.recv()
+
+            msg_id = 0
+            for cu in wanted:
+                msg_id += 1
+                ticker = await _ws_sub(
+                    ws, msg_id, {"type": "ticker", "id": FX_INSTRUMENTS[cu], "token": token}
+                )
+                bid = _to_float((ticker.get("bid") or {}).get("price"))
+                ask = _to_float((ticker.get("ask") or {}).get("price"))
+                rate = fx_mid(bid, ask)
+                if rate is not None:
+                    out[cu] = {"currency": cu, "rate": rate, "bid": bid, "ask": ask}
+        return out
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -1057,6 +1318,48 @@ def _to_float(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+_FX_QUANTUM = Decimal("0.000001")
+
+
+def fx_mid(bid, ask) -> float | None:
+    """Mid of bid/ask, 6dp HALF_EVEN — matching TR's ``getAvgConversionRate``.
+
+    Falls back to whichever side is present when the other is missing. Returns
+    ``None`` when neither is a usable number.
+    """
+    b = _to_float(bid)
+    a = _to_float(ask)
+    if b is None and a is None:
+        return None
+    try:
+        if a is None:
+            d = Decimal(str(b))
+        elif b is None:
+            d = Decimal(str(a))
+        else:
+            d = (Decimal(str(b)) + Decimal(str(a))) / 2
+        return float(d.quantize(_FX_QUANTUM, rounding=ROUND_HALF_EVEN))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _extract_money(node) -> dict | None:
+    """Pull ``{absolute: {value, currency}}`` → ``{value: float, currency}``.
+
+    Returns ``None`` for a missing/null leg or an unparseable value — TR's
+    ``taxes/pnl`` legs are nullable and ship values as decimal strings.
+    """
+    if not isinstance(node, dict):
+        return None
+    absolute = node.get("absolute")
+    if not isinstance(absolute, dict):
+        return None
+    value = _to_float(absolute.get("value"))
+    if value is None:
+        return None
+    return {"value": value, "currency": absolute.get("currency") or "EUR"}
 
 
 def _parse_ws_json(response):

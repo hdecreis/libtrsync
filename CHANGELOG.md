@@ -5,6 +5,51 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-29
+
+Pushes portfolio *computation* into the library: a new
+`traderepublic_sync.v1` facade returns typed, EUR-correct figures, plus new
+low-level endpoints for realized P&L and FX. Lets downstream consumers (e.g.
+`trdump`) drop their hand-rolled valuation/FX/aggregation.
+
+### Added
+- **`traderepublic_sync.v1` facade** — `Portfolio` (one-time:
+  `accounts` / `cash` / `positions` / `quote` / `transactions` / `fx_rates`
+  / `realized_pnl` / `sold_assets` / `snapshot`) and `PortfolioStream`
+  (live: `prices` / `positions` / `cash` / `transactions` / `fx`), with
+  frozen typed models (`Position`, `Money`, `FxRate`, `RealizedPnl`,
+  `SoldAsset`, `PortfolioSnapshot`, …). Positions are valued **in EUR**:
+  bonds divided by 100 (percent-of-par) and FX-converted, `averageBuyIn`
+  kept as EUR, unpriced positions falling back to cost basis. PE **held vs
+  committed** are separate fields; `snapshot(include_committed=False)`
+  controls only whether uncalled capital counts toward headline totals.
+- **`TRClient.fetch_realized_pnl(instrument_id, sec_acc_nos=None)`** —
+  server-computed realized P&L + dividend return via
+  `GET /api/v2/taxes/pnl` (equities/funds; 404 → empty for crypto/bonds).
+- **`TRClient.fetch_fx_rate` / `fetch_fx_rates`** + `fx_mid()` — EUR
+  conversion rates from TR's own LSX `ticker` instruments (USD/GBP/CHF/JPY),
+  mid of bid/ask, 6dp HALF_EVEN.
+- **`TRClient.fetch_private_markets(sec_acc_no)`** — Private-Markets
+  positions (incl. `pendingAmounts`) for committed-capital valuation.
+- **`TRClient.from_state()`**, **`resume_session()`** — a generic
+  session-resume policy (JWT reuse → WAF refresh → no-2FA refresh → full
+  login) with filesystem/UI left to callbacks.
+- **`ConnectionState.is_session_valid()` / `session_expiry_from_token()`** —
+  the JWT-expiry twin of the existing WAF helpers.
+- **`TRClient._rest_request()`** — authenticated REST plumbing reusing the
+  cookie jar + WAF headers, with WAF-refresh and no-2FA session-refresh
+  retries.
+- **`scripts/probe_rest.py`** and **`docs/tr-undocumented-api.md`**.
+
+### Changed
+- **`TRSession.subscribe_cash`** now filters by `accountNumber` (not `id`),
+  fixing TR's DEFAULT-scoping quirk that returned the primary account's
+  cash for every subscription. New `TRSession.subscribe_fx`.
+- **`TRClient.fetch_asset_list(sec_acc_no=...)`** — optional per-account
+  parameter (default unchanged). Its raw metrics remain quote-currency;
+  use the `v1` `Portfolio` for EUR-correct value/P&L.
+- **`TRClient.fetch_cash_balance(account_number=...)`** — optional scoping.
+
 ## [0.4.1] - 2026-05-29
 
 Adds a no-2FA session-refresh path so long-lived consumers stop hitting
