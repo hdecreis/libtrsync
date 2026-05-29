@@ -5,6 +5,30 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-29
+
+Made the snapshot call more efficient. It was lagging because:
+- bad code fetching multiple times the same endpoint
+- 1s timer wrongly placed on ticker calls
+- listing of the fully-sold assets was searching through ALL transactions,
+  now only from "SELL" events (for stocks&etfs), then fetch the pnl from tax
+  informations. for crypto and bonds (no tax information), we still have to
+  fetch the full transactions, but only on those assets.
+
+### Changed
+- **`fetch_transactions` (`client.py`)** - two new optional params, default None
+  so existing callers (incl. trdump fetch) are byte-identical:
+  - event_types → injects the types wire key
+  - categories → injects the categoryIds wire key
+- Optimization only: **Snapshot path (`portfolio.py`)**
+  `realized_pnl` and `sold_assets` now replace the single unbounded n-item walk
+  with two narrow filtered walks:
+  1. event_types=["TRADING_TRADE_EXECUTED","PRIVATE_MARKET_FUND_TRADE_EXECUTED"]
+     → sold-off detection across all classes (~37 items)
+  2. categories=["CRYPTO","BOND"]
+     → complete history for the classes TR 404s on taxes/pnl, so the timeline
+       fallback keeps a full cost basis (~3 items)
+
 ## [0.5.0] - 2026-05-29
 
 Pushes portfolio *computation* into the library: a new
@@ -371,7 +395,8 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.1
 [0.5.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.0
 [0.4.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.1
 [0.4.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.0
