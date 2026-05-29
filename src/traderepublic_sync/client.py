@@ -34,6 +34,7 @@ from .exceptions import (
     TransientError,
     WafExpired,
 )
+from .auth import AuthStrategy, WebRefreshAuth
 from .parsing import normalize_tr_id, parse_detail_sections
 from .dual_legged.mapping import build_dual_legged_transaction, deduplicate_pea
 from .session import TRSession
@@ -70,6 +71,8 @@ class TRClient:
         session_token: str | None = None,
         on_waf_expired: WafHook | None = None,
         on_session_expired: SessionHook | None = None,
+        session_cookies: list[dict] | None = None,
+        auth: AuthStrategy | None = None,
     ):
         """Construct a TR client.
 
@@ -81,6 +84,14 @@ class TRClient:
             session_token: pre-acquired ``tr_session`` cookie value. If
                 provided, all WS/REST calls can omit the explicit ``session_token``
                 argument.
+            session_cookies: full cookie jar from a previous session (as
+                produced by :meth:`dump_cookies` / stored on
+                :class:`~traderepublic_sync.state.ConnectionState`). Holds
+                TR's refresh cookie, so :meth:`refresh_session` can mint a
+                fresh ``session_token`` without 2FA.
+            auth: session-refresh strategy. Defaults to
+                :class:`~traderepublic_sync.auth.WebRefreshAuth`, which
+                refreshes via ``GET /api/v1/auth/web/session``.
             on_waf_expired: optional callback fired when a request fails with
                 :class:`WafExpired`. May be sync or async. Should return a
                 fresh WAF token string, or ``None`` after mutating
@@ -96,8 +107,14 @@ class TRClient:
         self.device_info = device_info or self._generate_device_info()
         self.locale = locale
         self._session_token = session_token
+        self.auth = auth if auth is not None else WebRefreshAuth()
         self.on_waf_expired = on_waf_expired
         self.on_session_expired = on_session_expired
+        # Shared HTTP session so the cookie jar (incl. TR's refresh cookie)
+        # accumulates across login → verify_2fa → refresh_session.
+        self._http = requests.Session()
+        if session_cookies:
+            self.load_cookies(session_cookies)
 
     @staticmethod
     def _generate_device_info() -> str:
@@ -110,6 +127,45 @@ class TRClient:
         h["x-aws-waf-token"] = self.waf_token
         h["x-tr-device-info"] = self.device_info
         return h
+
+    # ── Cookie jar ──────────────────────────────────────────────────────
+
+    def _token_from_jar(self) -> str | None:
+        """Read the current ``tr_session`` value off the shared cookie jar."""
+        return self._http.cookies.get("tr_session")
+
+    def dump_cookies(self) -> list[dict]:
+        """Serialise the cookie jar for persistence (e.g. onto ``ConnectionState``).
+
+        Returns a list of ``{name, value, domain, path}`` dicts — enough to
+        rebuild a jar that TR will accept, including the refresh cookie that
+        powers :meth:`refresh_session`.
+        """
+        return [
+            {"name": c.name, "value": c.value, "domain": c.domain, "path": c.path}
+            for c in self._http.cookies
+        ]
+
+    def load_cookies(self, cookies: list[dict]) -> None:
+        """Restore a cookie jar previously produced by :meth:`dump_cookies`."""
+        for ck in cookies or []:
+            self._http.cookies.set(
+                ck["name"],
+                ck["value"],
+                domain=ck.get("domain", ""),
+                path=ck.get("path", "/"),
+            )
+
+    def refresh_session(self) -> str:
+        """Mint a fresh ``tr_session`` via the configured :class:`AuthStrategy`.
+
+        No 2FA. Updates the stored session token and returns it. Raises
+        :class:`SessionExpired` if the strategy can't refresh (the consumer
+        then has to re-run ``login()`` + ``verify_2fa()``).
+        """
+        if self.auth is None:
+            raise SessionExpired("no auth strategy configured to refresh the session")
+        return self.auth.refresh_session(self)
 
     # ── Refresh hooks ──────────────────────────────────────────────────
 
@@ -230,7 +286,7 @@ class TRClient:
         """
         def _do():
             try:
-                resp = requests.post(
+                resp = self._http.post(
                     f"{TR_API_BASE}/api/v1/auth/web/login",
                     json={"phoneNumber": phone_number, "pin": pin},
                     headers=self._headers(),
@@ -260,7 +316,7 @@ class TRClient:
         """Request 2FA code via SMS instead of push notification."""
         def _do():
             try:
-                resp = requests.post(
+                resp = self._http.post(
                     f"{TR_API_BASE}/api/v1/auth/web/login/{process_id}/resend",
                     headers=self._headers(),
                 )
@@ -281,7 +337,7 @@ class TRClient:
         """Verify 2FA code. Returns session token on success."""
         def _do():
             try:
-                resp = requests.post(
+                resp = self._http.post(
                     f"{TR_API_BASE}/api/v1/auth/web/login/{process_id}/{code}",
                     headers=self._headers(),
                 )
@@ -297,9 +353,15 @@ class TRClient:
                 raise
             resp = _do()
 
-        # Extract session token from Set-Cookie header
-        session_token = None
+        # The shared cookie jar now holds tr_session *and* TR's refresh
+        # cookie — keeping both is what lets refresh_session() work later.
+        session_token = self._token_from_jar()
+
+        # Fallback: parse the Set-Cookie header directly (jar empty if a
+        # caller swapped in a non-cookie-persisting transport).
         for header, value in resp.headers.items():
+            if session_token:
+                break
             if header.lower() == "set-cookie" and "tr_session" in value:
                 for part in value.split(";"):
                     part = part.strip()
@@ -735,6 +797,8 @@ class TRClient:
         *,
         auto_reconnect: bool = False,
         on_reconnect=None,
+        auto_refresh: bool = True,
+        refresh_interval: float = 270.0,
     ) -> TRSession:
         """Return a :class:`TRSession` async context manager for live subscriptions.
 
@@ -748,10 +812,25 @@ class TRClient:
         WS drops, replaying live subscriptions on the new socket. The
         ``on_waf_expired`` / ``on_session_expired`` hooks configured on this
         client are forwarded to the session.
+
+        ``auto_refresh=True`` (the default) runs a background task that
+        calls :meth:`refresh_session` every ``refresh_interval`` seconds
+        (default 270s, just under TR's ~5 min token lifetime) and feeds the
+        fresh token to the live subscriptions — so the session stays valid
+        indefinitely without 2FA, until the refresh cookie itself expires.
+        Disabled automatically when no auth strategy is configured.
         """
         token = session_token or self._session_token
         if not token:
             raise TRAuthError("No session token.")
+
+        refresher = None
+        if auto_refresh and self.auth is not None:
+            async def refresher() -> str:
+                # refresh_session() is sync (requests) — keep it off the
+                # event loop so the WS reader isn't blocked.
+                return await asyncio.to_thread(self.refresh_session)
+
         return TRSession(
             token=token,
             locale=self.locale,
@@ -759,6 +838,8 @@ class TRClient:
             on_waf_expired=self.on_waf_expired,
             on_session_expired=self.on_session_expired,
             on_reconnect=on_reconnect,
+            session_refresher=refresher,
+            refresh_interval=refresh_interval,
         )
 
     async def fetch_cash_balance(self, session_token: str | None = None):

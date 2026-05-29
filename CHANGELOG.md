@@ -5,7 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.1] - 2026-05-29
+
+Adds a no-2FA session-refresh path so long-lived consumers stop hitting
+2FA every time the ~5-minute `tr_session` JWT lapses.
+
+### Added
+- **Pluggable auth strategies** (`auth.py`): `AuthStrategy` ABC with
+  `WebRefreshAuth` (the default) and a `DeviceKeyAuth` stub. Select via
+  `TRClient(auth=...)`.
+- **`TRClient.refresh_session()`** — mints a fresh `tr_session` with no
+  2FA via `GET /api/v1/auth/web/session`, for as long as TR's refresh
+  cookie is valid. Raises `SessionExpired` when a no-2FA refresh is no
+  longer possible (refresh cookie expired/revoked → re-run
+  `login()` + `verify_2fa()`).
+- **Cookie-jar retention**: `TRClient` now keeps a `requests.Session`, so
+  the refresh cookie set at `verify_2fa` time survives. `dump_cookies()` /
+  `load_cookies()` and a new `ConnectionState.session_cookies` field
+  persist the jar across processes alongside `session_token`.
+- **`TRSession` proactive refresh**: `open_session(..., auto_refresh=True,
+  refresh_interval=270.0)` runs a background task that refreshes the token
+  just under its expiry and feeds it to live subscriptions — the session
+  stays valid indefinitely without 2FA. The reader loop also attempts a
+  refresh before tearing down on a `SessionExpired` frame.
+- 11 tests covering refresh, cookie round-trip, the `DeviceKeyAuth` stub,
+  and the `TRSession` refresh helpers.
+
+### Changed
+- `TRClient` REST calls (`login`, `request_sms`, `verify_2fa`) now go
+  through the shared `requests.Session` so cookies accumulate across the
+  login flow. Tests that monkeypatched module-level `requests.post` now
+  patch `requests.Session.post`.
+
+### Notes for consumers
+- `DeviceKeyAuth` (the durable device-key/ECDSA flow) is a documented
+  plugin point, not yet implemented — it would log you out of your phone
+  (TR allows one paired device at a time), so `WebRefreshAuth` is the
+  default and recommended path.
 
 ## [0.4.0] — 2026-05-27
 
@@ -290,7 +326,8 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.0
 [0.4.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.0
 [0.3.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.1
 [0.3.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.3.0

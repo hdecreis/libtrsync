@@ -160,7 +160,7 @@ def test_login_retries_once_on_waf_expired(monkeypatch):
         return "fresh-waf-token"
 
     import requests as _requests
-    monkeypatch.setattr(_requests, "post", fake_post)
+    monkeypatch.setattr(_requests.Session, "post", fake_post)
 
     client = TRClient(waf_token="stale", on_waf_expired=on_waf_expired)
     result = client.login("+33612345678", "1234")
@@ -177,7 +177,7 @@ def test_login_raises_wafexpired_when_no_hook(monkeypatch):
         return _MockResponse(403, "blocked by WAF")
 
     import requests as _requests
-    monkeypatch.setattr(_requests, "post", fake_post)
+    monkeypatch.setattr(_requests.Session, "post", fake_post)
 
     client = TRClient(waf_token="stale")
     with pytest.raises(WafExpired):
@@ -197,7 +197,7 @@ def test_login_does_not_retry_on_session_or_other(monkeypatch):
         return "should-not-be-used"
 
     import requests as _requests
-    monkeypatch.setattr(_requests, "post", fake_post)
+    monkeypatch.setattr(_requests.Session, "post", fake_post)
 
     client = TRClient(waf_token="ok", on_waf_expired=on_waf_expired)
     with pytest.raises(TRAuthError):
@@ -219,7 +219,7 @@ def test_login_refresh_hook_returning_none_does_not_retry(monkeypatch):
         return None  # acquisition failed
 
     import requests as _requests
-    monkeypatch.setattr(_requests, "post", fake_post)
+    monkeypatch.setattr(_requests.Session, "post", fake_post)
 
     client = TRClient(waf_token="", on_waf_expired=on_waf_expired)
     with pytest.raises(WafExpired):
@@ -238,7 +238,7 @@ def test_login_async_hook_on_sync_path_raises_clearly(monkeypatch):
         return _MockResponse(403, "blocked by WAF")
 
     import requests as _requests
-    monkeypatch.setattr(_requests, "post", fake_post)
+    monkeypatch.setattr(_requests.Session, "post", fake_post)
 
     client = TRClient(waf_token="stale", on_waf_expired=async_hook)
     with pytest.raises(TRError, match="coroutine"):

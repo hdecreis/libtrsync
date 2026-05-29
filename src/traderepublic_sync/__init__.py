@@ -3,6 +3,7 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
+from .auth import AuthStrategy, DeviceKeyAuth, WebRefreshAuth
 from .client import TRClient
 from .session import TRSession
 from .constants import DEFAULT_HEADERS, TR_API_BASE, TR_WS_URL, WS_CONNECT_PAYLOAD
@@ -37,6 +38,10 @@ __all__ = [
     # Main client
     "TRClient",
     "TRSession",
+    # Auth / session-refresh strategies
+    "AuthStrategy",
+    "WebRefreshAuth",
+    "DeviceKeyAuth",
     # State
     "ConnectionState",
     # WAF

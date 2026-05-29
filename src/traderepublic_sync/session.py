@@ -47,6 +47,7 @@ _FRAME_RE = re.compile(r"^(\d+) ([AE]) ([\s\S]+)$")
 WafHook = Callable[[], Union[str, None, Awaitable[Union[str, None]]]]
 SessionHook = Callable[[], Union[str, None, Awaitable[Union[str, None]]]]
 ReconnectHook = Callable[[], Union[None, Awaitable[None]]]
+RefreshHook = Callable[[], Awaitable[Union[str, None]]]
 
 
 class TRSession:
@@ -64,6 +65,8 @@ class TRSession:
         on_waf_expired: WafHook | None = None,
         on_session_expired: SessionHook | None = None,
         on_reconnect: ReconnectHook | None = None,
+        session_refresher: RefreshHook | None = None,
+        refresh_interval: float = 270.0,
         reconnect_backoff: float = 2.0,
         reconnect_max_backoff: float = 60.0,
     ):
@@ -75,10 +78,13 @@ class TRSession:
         # session ``token`` so we can replay on reconnect.
         self._subs: dict[int, tuple[str, dict, Callable]] = {}
         self._reader_task: asyncio.Task | None = None
+        self._refresh_task: asyncio.Task | None = None
         self._auto_reconnect = auto_reconnect
         self._on_waf_expired = on_waf_expired
         self._on_session_expired = on_session_expired
         self._on_reconnect = on_reconnect
+        self._session_refresher = session_refresher
+        self._refresh_interval = refresh_interval
         self._reconnect_backoff = reconnect_backoff
         self._reconnect_max_backoff = reconnect_max_backoff
         self._closing = False
@@ -114,6 +120,41 @@ class TRSession:
         result = self._on_reconnect()
         if asyncio.iscoroutine(result):
             await result
+
+    async def _do_refresh(self) -> bool:
+        """Invoke the refresher and adopt a fresh token. Returns True on success.
+
+        Re-raises :class:`SessionExpired` so callers can distinguish "can't
+        refresh, give up" from a transient refresh hiccup.
+        """
+        if not self._session_refresher:
+            return False
+        result = await self._session_refresher()
+        if isinstance(result, str) and result:
+            self._token = result
+            logger.debug("TRSession token refreshed")
+            return True
+        return False
+
+    async def _refresh_loop(self) -> None:
+        """Proactively refresh the session token just under its expiry."""
+        while not self._closing:
+            try:
+                await asyncio.sleep(self._refresh_interval)
+            except asyncio.CancelledError:
+                return
+            if self._closing:
+                return
+            try:
+                await self._do_refresh()
+            except SessionExpired:
+                logger.warning("Proactive refresh failed; session expired")
+                await self._notify_session_expired()
+                return
+            except Exception:
+                # Transient refresh error (network/WAF) — keep the loop alive
+                # and try again next tick rather than killing the session.
+                logger.exception("Session refresh error; will retry next interval")
 
     # ── Connection management ─────────────────────────────────────────────
 
@@ -157,17 +198,20 @@ class TRSession:
     async def __aenter__(self) -> "TRSession":
         await self._open()
         self._reader_task = asyncio.create_task(self._reader_loop())
+        if self._session_refresher:
+            self._refresh_task = asyncio.create_task(self._refresh_loop())
         logger.info("TRSession connected")
         return self
 
     async def __aexit__(self, *_) -> None:
         self._closing = True
-        if self._reader_task:
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._reader_task, self._refresh_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         if self._ws:
             try:
                 await self._ws.close()
@@ -196,6 +240,14 @@ class TRSession:
                         typed = classify_ws_error_frame(body)
                         if isinstance(typed, SessionExpired):
                             logger.warning("Sub %d session expired", sub_id)
+                            # Try a refresh first — if it yields a fresh
+                            # token, drop the socket so the reconnect path
+                            # replays subs with it. Only give up if we can't.
+                            try:
+                                if await self._do_refresh():
+                                    break
+                            except SessionExpired:
+                                pass
                             await self._notify_session_expired()
                             # Without a valid token there's no point staying
                             # connected — tear down and exit the loop.

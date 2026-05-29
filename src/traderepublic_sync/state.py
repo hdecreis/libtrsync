@@ -1,6 +1,6 @@
 """Connection state holder"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import parse_qs, unquote
@@ -23,6 +23,12 @@ class ConnectionState:
     process_id: Optional[str] = None
     session_token: Optional[str] = None
     auth_status: str = "new"  # new | pending_2fa | authenticated | expired
+    # Full HTTP cookie jar captured at verify_2fa time, as a list of
+    # {name, value, domain, path} dicts. Holds TR's refresh cookie, which
+    # is what lets ``TRClient.refresh_session`` mint a fresh ``session_token``
+    # without 2FA. Reuse across processes alongside ``session_token``.
+    # Appended last to keep the existing positional field order stable.
+    session_cookies: list = field(default_factory=list)
 
     def is_authenticated(self) -> bool:
         return self.auth_status == "authenticated" and bool(self.session_token)
