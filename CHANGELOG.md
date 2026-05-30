@@ -5,6 +5,34 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-05-30
+
+Cash-interest ("Total Earned") support, plus the auth fix that makes it
+actually reach TR's banking API.
+
+### Added
+- **Cash interest** — lifetime "Total Earned" + accrued-but-unpaid figures
+  for the brokerage account:
+  - **`TRClient.interest_summary(core_account_number=None)`** — raw
+    `GET /api/v1/banking/consumer/interest/{coreAccountNumber}/details-data`.
+    `coreAccountNumber` is the `DEFAULT` (CTO) pair's `cashAccountNumber`
+    (fallback `JUNIOR_TRUST`), auto-resolved from `accountPairs` when omitted.
+    Returns `None` when interest isn't activated (TR 404s).
+  - **`Portfolio.interest() -> InterestEarned`** (v1 facade) — typed
+    `earned` / `pending` / `currency`. `earned` is folded into the snapshot's
+    realized total; `pending` is excluded (not realized yet).
+  - **`InterestEarned`** model exported from `traderepublic_sync.v1`.
+
+### Fixed
+- **REST calls now send `Authorization: Bearer <tr_session>`**
+  (`client.py::_rest_request`). TR's `/api/v1/banking/...` namespace (cash
+  interest) authenticates via the bearer header, not just the `tr_session`
+  cookie that `/api/v2/taxes/pnl` and the WS protocol accept — so
+  `interest_summary` was returning **HTTP 401** (and burning a needless
+  `refresh_session()` retry) on every call. The header is now sent on all
+  authenticated REST calls, mirroring the TR web client; cookie-only
+  endpoints are unaffected. Login / 2FA POST directly and are untouched.
+
 ## [0.5.1] - 2026-05-29
 
 Made the snapshot call more efficient. It was lagging because:
@@ -395,7 +423,8 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.2
 [0.5.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.1
 [0.5.0]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.0
 [0.4.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.4.1

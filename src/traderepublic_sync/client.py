@@ -226,13 +226,25 @@ class TRClient:
         url = f"{TR_API_BASE}{path}"
 
         def _do() -> requests.Response | None:
+            # TR's banking namespace (``/api/v1/banking/...``, e.g. cash
+            # interest) authenticates via an ``Authorization: Bearer`` header,
+            # not just the ``tr_session`` cookie that ``/api/v2/taxes/pnl`` and
+            # the WS protocol accept. Sending the bearer token on every REST
+            # call mirrors what the TR web client does and is harmless for the
+            # cookie-only endpoints. Only authenticated data calls reach
+            # ``_rest_request`` (login / 2FA use ``_http.post`` directly), so
+            # there's always a token to send once logged in.
+            headers = self._headers()
+            tok = self._token_from_jar() or self._session_token
+            if tok:
+                headers["Authorization"] = f"Bearer {tok}"
             try:
                 resp = self._http.request(
                     method,
                     url,
                     params=params,
                     json=json_body,
-                    headers=self._headers(),
+                    headers=headers,
                 )
             except requests.RequestException as e:
                 raise classify_network_error(e, context=context) from e
