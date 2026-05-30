@@ -134,6 +134,23 @@ class SoldAsset:
 
 
 @dataclass(frozen=True)
+class InterestEarned:
+    """Cash interest on the brokerage account.
+
+    ``earned`` is the lifetime interest paid out — the app's "Total Earned".
+    ``pending`` is interest accrued but not yet paid (the ``+ …`` row); it is
+    **not** part of the headline and is excluded from realized totals. Both are
+    ``None`` when interest isn't activated or no brokerage cash account exists.
+    Values are floats for consistency with :class:`Money` (the rest of the
+    facade is float-based), not :class:`~decimal.Decimal`.
+    """
+
+    earned: Optional[float]
+    pending: Optional[float]
+    currency: str = "EUR"
+
+
+@dataclass(frozen=True)
 class PortfolioSnapshot:
     accounts: list[Account]
     positions: list[Position]
@@ -149,3 +166,4 @@ class PortfolioSnapshot:
     unpriced_count: int
     includes_committed: bool
     fetched_at: str
+    interest: InterestEarned

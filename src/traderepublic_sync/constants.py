@@ -30,6 +30,12 @@ WS_CONNECT_PAYLOAD = {
 # per securities account). See ``TRClient.fetch_realized_pnl``.
 TR_API_PNL_PATH = "/api/v2/taxes/pnl"
 
+# REST path template for cash-interest details (lifetime + pending "Total
+# Earned"). ``{account}`` is the brokerage cash account number — the
+# ``cashAccountNumber`` of the DEFAULT (CTO) account pair. Not an IBAN. See
+# ``TRClient.interest_summary``.
+TR_API_INTEREST_PATH = "/api/v1/banking/consumer/interest/{account}/details-data"
+
 # Synthetic LSX instruments TR's own app subscribes to via the ``ticker`` topic
 # to read EUR conversion rates (``subscribeToConversionRateFromEUR``). The mid
 # of bid/ask is *units of foreign currency per 1 EUR* (e.g. USD per EUR — the

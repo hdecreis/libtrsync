@@ -13,13 +13,14 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from ..client import TRClient
+from ..client import TRClient, _brokerage_cash_account_number
 from . import fx
 from .models import (
     Account,
     CashBalance,
     CommittedAmount,
     FxRate,
+    InterestEarned,
     Money,
     Position,
     PortfolioSnapshot,
@@ -432,6 +433,24 @@ class Portfolio:
             )
         return out
 
+    # ── cash interest ─────────────────────────────────────────────────────
+
+    async def interest(self) -> InterestEarned:
+        """Cash interest on the brokerage account (lifetime + pending).
+
+        Resolves the ``DEFAULT`` (CTO) pair's ``cashAccountNumber`` and calls
+        TR's interest details endpoint (REST, run off-loop). Returns an
+        :class:`InterestEarned` with ``None`` fields when interest isn't
+        activated or no brokerage cash account exists. ``earned`` is the
+        lifetime "Total Earned"; ``pending`` is accrued-but-unpaid interest.
+        """
+        pairs = await self._account_pairs()
+        core = _brokerage_cash_account_number(pairs)
+        if not core:
+            return InterestEarned(earned=None, pending=None)
+        raw = await asyncio.to_thread(self._client.interest_summary, core)
+        return _interest_from_raw(raw)
+
     # ── snapshot ──────────────────────────────────────────────────────────
 
     async def snapshot(self, include_committed: bool = False) -> PortfolioSnapshot:
@@ -448,6 +467,7 @@ class Portfolio:
         # Reuse the positions just fetched — realized_pnl only needs them for
         # the held-ISIN set, so this avoids a second full position walk.
         realized = await self.realized_pnl(positions=positions)
+        interest = await self.interest()
 
         total_value = sum(p.value_eur for p in positions)
         total_cost = sum(p.cost_basis_eur for p in positions)
@@ -463,6 +483,11 @@ class Portfolio:
             conv = fx.convert_to_eur(c.amount, c.currency, rates)
             total_cash += conv if conv is not None else c.amount
 
+        # Lifetime cash interest counts as realized income; pending does not.
+        total_realized = realized["total_realized_eur"]
+        if interest.earned is not None:
+            total_realized += interest.earned
+
         return PortfolioSnapshot(
             accounts=accounts,
             positions=positions,
@@ -473,11 +498,12 @@ class Portfolio:
             total_unrealized_pnl_eur=total_value - total_cost,
             total_committed_eur=total_committed,
             total_cash_eur=total_cash,
-            total_realized_pnl_eur=realized["total_realized_eur"],
+            total_realized_pnl_eur=total_realized,
             total_dividends_eur=realized["total_dividends_eur"],
             unpriced_count=sum(1 for p in positions if not p.priced),
             includes_committed=include_committed,
             fetched_at=datetime.now(timezone.utc).isoformat(),
+            interest=interest,
         )
 
     # ── live streaming ────────────────────────────────────────────────────
@@ -582,3 +608,34 @@ def _num(value) -> float:
         return float(value) if value is not None else 0.0
     except (TypeError, ValueError):
         return 0.0
+
+
+def _money_value(node) -> float | None:
+    """Pull the float ``value`` out of a TR ``{value, currency}`` MoneyAmount."""
+    if not isinstance(node, dict):
+        return None
+    value = node.get("value")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _interest_from_raw(raw: dict | None) -> InterestEarned:
+    """Shape TR's interest ``details-data`` payload into an :class:`InterestEarned`."""
+    if not isinstance(raw, dict):
+        return InterestEarned(earned=None, pending=None)
+    earned_node = raw.get("interestEarned")
+    pending_node = raw.get("pendingInterestEarned")
+    currency = "EUR"
+    for node in (earned_node, pending_node):
+        if isinstance(node, dict) and node.get("currency"):
+            currency = node["currency"]
+            break
+    return InterestEarned(
+        earned=_money_value(earned_node),
+        pending=_money_value(pending_node),
+        currency=currency,
+    )

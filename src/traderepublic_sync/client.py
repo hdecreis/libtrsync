@@ -34,6 +34,7 @@ from .constants import (
     DEFAULT_HEADERS,
     FX_INSTRUMENTS,
     TR_API_BASE,
+    TR_API_INTEREST_PATH,
     TR_API_PNL_PATH,
     TR_WS_URL,
     WS_CONNECT_PAYLOAD,
@@ -1144,6 +1145,34 @@ class TRClient:
             )
         return out
 
+    def interest_summary(self, core_account_number: str | None = None) -> dict | None:
+        """Cash-interest figures for the brokerage account (lifetime + pending).
+
+        Calls ``GET /api/v1/banking/consumer/interest/{coreAccountNumber}/details-data``
+        (plain authenticated REST). ``core_account_number`` is the brokerage
+        cash account number — the ``cashAccountNumber`` of the ``DEFAULT`` (CTO)
+        account pair (fallback ``JUNIOR_TRUST``), *not* an IBAN. When omitted it
+        is resolved via ``accountPairs`` (which requires this be called outside a
+        running event loop, like :meth:`fetch_realized_pnl`).
+
+        Returns the raw payload — every money field is a ``{value, currency}``
+        ``MoneyAmount``; ``interestEarned`` is the lifetime "Total Earned" and
+        ``pendingInterestEarned`` is interest accrued but not yet paid. Returns
+        ``None`` when there is no brokerage cash account, or when interest is not
+        activated (TR 404s).
+        """
+        if core_account_number is None:
+            pairs = asyncio.run(self.fetch_account_pairs())
+            core_account_number = _brokerage_cash_account_number(pairs)
+        if not core_account_number:
+            return None
+
+        path = TR_API_INTEREST_PATH.format(account=core_account_number)
+        resp = self._rest_request("GET", path, allow_404=True, context="interest")
+        if resp is None:
+            return None
+        return resp.json()
+
     async def fetch_fx_rate(
         self, currency: str, session_token: str | None = None
     ) -> dict | None:
@@ -1210,6 +1239,20 @@ _PRODUCT_TYPE_MAP = {
     "DEFAULT": ("Trade Republic CTO", "BROKERAGE"),
     "TAX_WRAPPER": ("Trade Republic PEA", "BROKERAGE"),
 }
+
+
+def _brokerage_cash_account_number(pairs: list[dict]) -> str | None:
+    """The brokerage cash account number TR's interest endpoint keys on.
+
+    Mirrors the app's ``GetBrokerageCashAccountNumberUseCase``: the
+    ``cashAccountNumber`` of the first ``DEFAULT`` pair, falling back to
+    ``JUNIOR_TRUST``. Returns ``None`` if neither exists.
+    """
+    for product_type in ("DEFAULT", "JUNIOR_TRUST"):
+        for pair in pairs:
+            if pair.get("productType") == product_type and pair.get("cashAccountNumber"):
+                return pair["cashAccountNumber"]
+    return None
 
 
 def _pairs_to_accounts(pairs: list[dict]) -> list[dict]:

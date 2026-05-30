@@ -219,6 +219,13 @@ class FakeClient:
     def fetch_realized_pnl(self, instrument_id, sec_acc_nos=None):
         return _PNL.get(instrument_id, [])
 
+    # Interest off by default; tests that exercise it set ``interest_payload``.
+    interest_payload = None
+
+    def interest_summary(self, core_account_number=None):
+        self.interest_account = core_account_number
+        return self.interest_payload
+
 
 def _pf():
     return Portfolio(FakeClient())
@@ -340,3 +347,36 @@ def test_snapshot_totals_and_unpriced_count():
     assert snap.unpriced_count == 1
     assert "USD" in snap.fx_rates
     assert snap.includes_committed is False
+    # Interest off → headline figures unchanged, interest fields are None.
+    assert snap.interest.earned is None
+    assert snap.interest.pending is None
+
+
+# ── cash interest ─────────────────────────────────────────────────────────────
+
+
+def test_interest_resolves_default_pair_and_shapes_payload():
+    client = FakeClient()
+    client.interest_payload = {
+        "interestEarned": {"value": 123.45, "currency": "EUR"},
+        "pendingInterestEarned": {"value": 4.56, "currency": "EUR"},
+    }
+    interest = asyncio.run(Portfolio(client).interest())
+    # Resolved against the DEFAULT pair's cash account (not the TAX_WRAPPER one).
+    assert client.interest_account == "CASH1"
+    assert interest.earned == 123.45
+    assert interest.pending == 4.56
+    assert interest.currency == "EUR"
+
+
+def test_snapshot_folds_earned_into_realized_excludes_pending():
+    client = FakeClient()
+    client.interest_payload = {
+        "interestEarned": {"value": 100.0, "currency": "EUR"},
+        "pendingInterestEarned": {"value": 4.56, "currency": "EUR"},
+    }
+    snap = asyncio.run(Portfolio(client).snapshot())
+    # 283.0 instrument realized + 100.0 lifetime interest; pending excluded.
+    assert round(snap.total_realized_pnl_eur, 2) == 383.0
+    assert snap.interest.earned == 100.0
+    assert snap.interest.pending == 4.56
