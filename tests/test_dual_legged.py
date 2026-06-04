@@ -268,3 +268,29 @@ def test_user_case_pay_in_and_purchase_kept_separately():
     by_type = {t["transaction_type"]: t for t in result}
     assert by_type["TRANSFER"]["debit_amount"] == pytest.approx(10.23)
     assert by_type["PURCHASE"]["debit_amount"] == pytest.approx(17.63)
+
+
+def test_pea_pay_in_stamps_both_legs_from_account_pairs():
+    """When the resolved account topology is supplied, a PEA cash inflow
+    carries both legs in TR-native terms: credit→PEA cash (destination),
+    debit→CTO cash (source). This encodes the French rule that the PEA cash
+    account is fed only from the sibling CTO cash account, so the consumer
+    can map each number onto its own account without guessing direction."""
+    item = load_item("pea_pay_in")
+    parsed = parse_detail_sections(item["_detail_raw"])
+
+    # No topology supplied → fields absent (back-compat).
+    plain = build_dual_legged_transaction(item, parsed)
+    assert "credit_tr_cash_account" not in plain
+    assert "debit_tr_cash_account" not in plain
+
+    # Topology supplied → both legs stamped.
+    tx = build_dual_legged_transaction(
+        item,
+        parsed,
+        default_cash_account="0254693511",   # DEFAULT (CTO) cash = source
+        pea_cash_account="0254693513",        # TAX_WRAPPER (PEA) cash = dest
+    )
+    assert tx["transaction_type"] == "TRANSFER"
+    assert tx["credit_tr_cash_account"] == "0254693513"   # into PEA cash
+    assert tx["debit_tr_cash_account"] == "0254693511"    # out of CTO cash

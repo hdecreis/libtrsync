@@ -92,8 +92,23 @@ def determine_tx_type(main_item, parsed_detail):
     return "CUSTOM"
 
 
-def build_dual_legged_transaction(main_item, parsed_detail):
-    """Build a dual-legged transaction dict from TR main item + parsed detail."""
+def build_dual_legged_transaction(
+    main_item,
+    parsed_detail,
+    *,
+    default_cash_account=None,
+    pea_cash_account=None,
+):
+    """Build a dual-legged transaction dict from TR main item + parsed detail.
+
+    ``default_cash_account`` / ``pea_cash_account`` are the TR
+    ``cashAccountNumber`` of the ``DEFAULT`` (CTO) and ``TAX_WRAPPER`` (PEA)
+    account pairs (see :func:`_brokerage_cash_account_number` /
+    :func:`_tax_wrapper_cash_account_number` in ``client``). When supplied,
+    a PEA cash inflow stamps both legs in TR-native terms so the consumer can
+    map each side onto its own account: by French law the PEA cash account is
+    fed only from the holder's sibling CTO cash account at the same bank.
+    """
     event_type = main_item.get("eventType") or ""
     tx_type = determine_tx_type(main_item, parsed_detail)
     account_name, account_type = determine_account(main_item, parsed_detail)
@@ -172,15 +187,21 @@ def build_dual_legged_transaction(main_item, parsed_detail):
 
     elif tx_type == "TRANSFER":
         if event_type in _PEA_INBOUND_TRANSFER_EVENTS:
-            # PEA top-up: money arriving in the PEA cash account from the
-            # user's external bank (or CTO). TR signs the amount negatively
-            # (user-centric "cash spent on PEA") so we ignore the sign and
-            # set both legs — the consumer routes ``credit_account`` to PEA
-            # cash and ``debit_account`` to the external/CTO source.
+            # PEA top-up: money arriving in the PEA cash account, funded only
+            # from the sibling CTO cash account (French PEA rule). The event
+            # itself is booked against the CTO cash (``cashAccountNumber`` is
+            # the DEFAULT pair's, amount signed negatively — "cash spent on
+            # PEA"), so we ignore the sign and set both legs from the resolved
+            # account pairs: ``credit`` = PEA cash (destination), ``debit`` =
+            # CTO cash (source).
             tx["credit_asset_code"] = currency
             tx["credit_amount"] = total
             tx["debit_asset_code"] = currency
             tx["debit_amount"] = total
+            if pea_cash_account:
+                tx["credit_tr_cash_account"] = pea_cash_account
+            if default_cash_account:
+                tx["debit_tr_cash_account"] = default_cash_account
         elif (main_item.get("amount") or {}).get("value", 0) >= 0:
             tx["credit_asset_code"] = currency
             tx["credit_amount"] = total

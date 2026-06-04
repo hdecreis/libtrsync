@@ -10,6 +10,8 @@ of the timeline-detail responses into structured Python dicts.
 > reverse-engineers the web app's WebSocket protocol; it can break at any
 > time and is not endorsed by Trade Republic. Use at your own risk.
 
+a showcase of the capability in [trdump](https://github.com/hdecreis/trdump)
+
 ## Install
 
 ```bash

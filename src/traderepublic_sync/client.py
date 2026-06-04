@@ -540,6 +540,20 @@ class TRClient:
         until_dt = _coerce_datetime(until)
         since_id_norm = normalize_tr_id(since_id) if since_id else None
 
+        # Resolve account topology up front so PEA cash inflows can name both
+        # legs in TR-native terms (PEA cash is fed only from the sibling
+        # DEFAULT/CTO cash). Best-effort and isolated on its own socket: if it
+        # fails, transfers simply omit the per-leg account numbers and the
+        # consumer falls back to its own routing.
+        default_cash_account = None
+        pea_cash_account = None
+        try:
+            pairs = await self.fetch_account_pairs(token)
+            default_cash_account = _brokerage_cash_account_number(pairs)
+            pea_cash_account = _tax_wrapper_cash_account_number(pairs)
+        except Exception as e:  # noqa: BLE001 - topology is optional metadata
+            logger.warning("Could not resolve account pairs for transfer legs: %s", e)
+
         raw_items = []
         dual_legged_transactions = []
         message_id = 0
@@ -611,7 +625,12 @@ class TRClient:
                         detail_raw = _parse_ws_json(detail_response)
 
                     parsed = parse_detail_sections(detail_raw)
-                    dual_legged_tx = build_dual_legged_transaction(item, parsed)
+                    dual_legged_tx = build_dual_legged_transaction(
+                        item,
+                        parsed,
+                        default_cash_account=default_cash_account,
+                        pea_cash_account=pea_cash_account,
+                    )
 
                     item["_detail"] = parsed
                     item["_detail_raw"] = detail_raw
@@ -1264,6 +1283,18 @@ def _brokerage_cash_account_number(pairs: list[dict]) -> str | None:
         for pair in pairs:
             if pair.get("productType") == product_type and pair.get("cashAccountNumber"):
                 return pair["cashAccountNumber"]
+    return None
+
+
+def _tax_wrapper_cash_account_number(pairs: list[dict]) -> str | None:
+    """The PEA cash account number — the ``cashAccountNumber`` of the first
+    ``TAX_WRAPPER`` pair (TR's product type for a PEA). Returns ``None`` if the
+    account holds no PEA. The sibling that funds it is
+    :func:`_brokerage_cash_account_number`.
+    """
+    for pair in pairs:
+        if pair.get("productType") == "TAX_WRAPPER" and pair.get("cashAccountNumber"):
+            return pair["cashAccountNumber"]
     return None
 
 
