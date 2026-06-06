@@ -5,6 +5,52 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-06-05
+
+Two classification/routing fixes found via a full real-data audit.
+
+### Fixed
+- **Unresolved trades now default to the CTO (`DEFAULT`) product.** Events with
+  no `cashAccountNumber` and no CTO/PEA marker (e.g. `SPARE_CHANGE_AGGREGATE`
+  round-ups) no longer leave the securities leg unnamed — which previously made
+  the consumer dump the bought security into the *cash* account.
+- **No-asset credits map to `AIRDROP`, not `SELL`.** A positive-amount event with
+  no ISIN (e.g. `eventType: null` "Activation du PEA : vous avez reçu 1,00 €")
+  was becoming a degenerate sale; it's now an `AIRDROP` credited as cash.
+- **Quantity parsing for bonds and round-ups.**
+  - Bonds expose no share count: the nominal `Valeur faciale` (native ccy) is now
+    read as the quantity at unit price 1, with the market quote in `Quotation`.
+  - Round-ups format the line with a lowercase `x` and a dot decimal
+    (`0.004224 x 236,70 €`); the qty×price fallback now accepts both `×` and `x`.
+  - `parse_currency_amount` drops residual currency letters so `"12,54 $US"`
+    (TR's USD notation) parses instead of returning `None`.
+  - Sub-row values are also read from `displayValue.text`, not only `detail.text`.
+
+### Known limitations (TR timeline data, not fixable here)
+- Not-yet-executed private-equity plan orders (status *Créé*) expose no quantity.
+- Reverse splits with an ISIN change (e.g. Atos) emit no conversion event, so the
+  old-ISIN position is not reduced; handle with a manual split downstream.
+
+## [0.5.4] - 2026-06-05
+
+Per-leg TR account names on trades, dividends and PEA transfers, so a consumer
+can route each double-entry leg to its own account and choose a combined
+(cash+securities in one account) vs split-cash model purely by how it maps.
+
+### Added
+- `credit_/debit_/reference_tr_account_name` on the dual-legged dict, resolved
+  from `accountPairs`: e.g. a CTO purchase credits `Trade Republic CTO`
+  (securities) and debits `Trade Republic (<cash#>)` (cash); a dividend credits
+  the cash account and references the paying product; a PEA cash inflow credits
+  PEA cash and debits CTO cash. Names match `determine_account()` labels.
+- `build_dual_legged_transaction(..., account_pairs=...)` to enable the above.
+
+### Changed
+- **BREAKING (since 0.5.3):** PEA transfers now carry `credit_/debit_tr_account_name`
+  (the cash account *names*) instead of the `credit_/debit_tr_cash_account`
+  (cash account *numbers*) introduced in 0.5.3, unifying transfers and trades
+  under one leg-routing field.
+
 ## [0.5.3] - 2026-06-04
 
 Fixed source account identification for PEA pay-in events (brokerage cash account)
@@ -428,7 +474,9 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.5
+[0.5.4]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.4
 [0.5.3]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.3
 [0.5.2]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.2
 [0.5.1]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.1

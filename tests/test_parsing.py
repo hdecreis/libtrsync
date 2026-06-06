@@ -1,4 +1,37 @@
 from traderepublic_sync import parse_currency_amount, normalize_tr_id, extract_isin_from_icon
+from traderepublic_sync.parsing import _parse_transaction_nested
+
+
+def test_parse_currency_amount_dollar_us():
+    # TR writes USD as "$US"; the residual "US" must not break the parse.
+    assert parse_currency_amount("12,54 $US") == 12.54
+    assert parse_currency_amount("11,29\xa0$US") == 11.29
+
+
+def test_transaction_nested_round_up_lowercase_x():
+    # Round-ups format the line as "0.004224 x 236,70 €" (lowercase x, dot decimal).
+    result = {"quantity": None, "unit_price": None, "total": None}
+    detail = {"displayValue": {"text": "0.004224 x 236,70 €"}}
+    _parse_transaction_nested(detail, result)
+    assert result["quantity"] == 0.004224
+    assert result["unit_price"] == 236.70
+
+
+def test_transaction_nested_bond_valeur_faciale():
+    # Bonds expose no share count — the nominal "Valeur faciale" is the quantity
+    # (native ccy) at unit price 1; the market quote is "Quotation" (% of par).
+    result = {"quantity": None, "unit_price": None, "total": None}
+    detail = {
+        "action": {"type": "infoPage", "payload": {"sections": [{"data": [
+            {"title": "Valeur faciale", "detail": {"text": "12,54 $US"}},
+            {"title": "Quotation", "detail": {"text": "91,26 %"}},
+            {"title": "Total", "detail": {"text": "11,00 €"}},
+        ]}]}}
+    }
+    _parse_transaction_nested(detail, result)
+    assert result["quantity"] == 12.54
+    assert result["unit_price"] == 1.0
+    assert result["total"] == 11.0
 
 
 def test_parse_currency_amount_french_format():

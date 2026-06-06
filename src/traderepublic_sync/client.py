@@ -547,6 +547,7 @@ class TRClient:
         # consumer falls back to its own routing.
         default_cash_account = None
         pea_cash_account = None
+        pairs: list[dict] = []
         try:
             pairs = await self.fetch_account_pairs(token)
             default_cash_account = _brokerage_cash_account_number(pairs)
@@ -630,6 +631,7 @@ class TRClient:
                         parsed,
                         default_cash_account=default_cash_account,
                         pea_cash_account=pea_cash_account,
+                        account_pairs=pairs,
                     )
 
                     item["_detail"] = parsed

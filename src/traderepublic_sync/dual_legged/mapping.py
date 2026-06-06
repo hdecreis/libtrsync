@@ -48,6 +48,65 @@ EVENT_TYPE_MAP = {
 # as a regular outbound transfer.
 _PEA_INBOUND_TRANSFER_EVENTS = {"PEA_SAVINGS_PLAN_PAY_IN", "PEA_DEPOSIT_DEBIT"}
 
+# productType → the securities-account name determine_account() would emit.
+_PRODUCT_ACCOUNT_NAMES = {
+    "DEFAULT": "Trade Republic CTO",
+    "TAX_WRAPPER": "Trade Republic PEA",
+}
+
+
+def _cash_account_name(cash_no):
+    return f"Trade Republic ({cash_no})" if cash_no else None
+
+
+def _resolve_leg_accounts(main_item, parsed_detail, account_pairs):
+    """Resolve the TR cash- and securities-account NAMES for the product an
+    event belongs to, using ``accountPairs``.
+
+    Names match :func:`determine_account`'s labels so a consumer can route each
+    leg of a trade/dividend to the same mappable account it already sees in the
+    timeline — e.g. a CTO purchase credits "Trade Republic CTO" (securities) and
+    debits "Trade Republic (<cash#>)" (cash). Whether those two names map to one
+    account (combined) or two (split cash) is then the consumer's choice.
+
+    Returns ``(cash_account_name, securities_account_name)`` — either may be
+    ``None`` when ``account_pairs`` is empty or the product can't be resolved.
+    """
+    if not account_pairs:
+        return None, None
+    cash_no = main_item.get("cashAccountNumber")
+    pair = None
+    if cash_no:
+        pair = next(
+            (p for p in account_pairs if p.get("cashAccountNumber") == cash_no), None
+        )
+    if pair is None:
+        # No cashAccountNumber on the item (some CTO/PEA trades carry the
+        # product only in the detail) — fall back to the determined name.
+        name, _ = determine_account(main_item, parsed_detail)
+        up = name.upper()
+        want = (
+            "TAX_WRAPPER" if "PEA" in up
+            else "DEFAULT" if ("CTO" in up or "ORDINAIRE" in up)
+            else None
+        )
+        if want:
+            pair = next(
+                (p for p in account_pairs if p.get("productType") == want), None
+            )
+    if pair is None:
+        # Still unresolved (e.g. SAVINGS_PLAN_INVOICE_CREATED carries no
+        # cashAccountNumber and no CTO/PEA marker) — a non-PEA trade belongs to
+        # the DEFAULT (CTO) product, so default there rather than leaving the
+        # securities leg unnamed (which would dump it into the cash account).
+        pair = next(
+            (p for p in account_pairs if p.get("productType") == "DEFAULT"), None
+        )
+    if pair is None:
+        return _cash_account_name(cash_no), None
+    cash = pair.get("cashAccountNumber") or cash_no
+    return _cash_account_name(cash), _PRODUCT_ACCOUNT_NAMES.get(pair.get("productType"))
+
 
 def determine_account(main_item, parsed_detail):
     """Determine account name from TR data. Returns ``(account_name, account_type)``."""
@@ -87,7 +146,9 @@ def determine_tx_type(main_item, parsed_detail):
     if amount_val < 0:
         return "PURCHASE"
     elif amount_val > 0:
-        return "SELL"
+        # A credit with no security can't be a sale — it's an incoming bonus
+        # (e.g. "Activation du PEA : vous avez reçu 1,00 €", a referral, etc.).
+        return "SELL" if parsed_detail.get("isin") else "AIRDROP"
 
     return "CUSTOM"
 
@@ -98,20 +159,26 @@ def build_dual_legged_transaction(
     *,
     default_cash_account=None,
     pea_cash_account=None,
+    account_pairs=None,
 ):
     """Build a dual-legged transaction dict from TR main item + parsed detail.
 
     ``default_cash_account`` / ``pea_cash_account`` are the TR
     ``cashAccountNumber`` of the ``DEFAULT`` (CTO) and ``TAX_WRAPPER`` (PEA)
     account pairs (see :func:`_brokerage_cash_account_number` /
-    :func:`_tax_wrapper_cash_account_number` in ``client``). When supplied,
-    a PEA cash inflow stamps both legs in TR-native terms so the consumer can
-    map each side onto its own account: by French law the PEA cash account is
-    fed only from the holder's sibling CTO cash account at the same bank.
+    :func:`_tax_wrapper_cash_account_number` in ``client``); they let a PEA cash
+    inflow name both legs (French rule: PEA cash is fed only from the sibling
+    CTO cash). ``account_pairs`` (the raw ``accountPairs`` list) additionally
+    lets trades and dividends name their cash vs securities leg via
+    ``credit_/debit_/reference_tr_account_name``, so a consumer can route each
+    leg independently and decide combined-vs-split-cash purely by its mapping.
     """
     event_type = main_item.get("eventType") or ""
     tx_type = determine_tx_type(main_item, parsed_detail)
     account_name, account_type = determine_account(main_item, parsed_detail)
+    cash_account_name, securities_account_name = _resolve_leg_accounts(
+        main_item, parsed_detail, account_pairs
+    )
 
     isin = parsed_detail.get("isin") or extract_isin_from_icon(main_item.get("icon"))
     asset_name = parsed_detail.get("asset_name") or main_item.get("title", "")
@@ -156,6 +223,11 @@ def build_dual_legged_transaction(
         tx["debit_amount"] = round(debit_total, 2)
         tx["quantity"] = quantity
         tx["unit_price"] = unit_price
+        # asset in → securities account; cash out → cash account
+        if securities_account_name:
+            tx["credit_tr_account_name"] = securities_account_name
+        if cash_account_name:
+            tx["debit_tr_account_name"] = cash_account_name
 
     elif tx_type == "SELL":
         if total:
@@ -171,6 +243,11 @@ def build_dual_legged_transaction(
         tx["debit_amount"] = quantity
         tx["quantity"] = quantity
         tx["unit_price"] = unit_price
+        # cash in → cash account; asset out → securities account
+        if cash_account_name:
+            tx["credit_tr_account_name"] = cash_account_name
+        if securities_account_name:
+            tx["debit_tr_account_name"] = securities_account_name
 
     elif tx_type == "DIVIDEND":
         tx["credit_asset_code"] = currency
@@ -180,10 +257,31 @@ def build_dual_legged_transaction(
         tx["quantity"] = quantity
         tx["dividend_per_share"] = parsed_detail.get("dividend_per_share")
         tx["dividend_currency"] = parsed_detail.get("dividend_currency") or currency
+        # cash in → cash account; the paying holding → securities account
+        if cash_account_name:
+            tx["credit_tr_account_name"] = cash_account_name
+        if securities_account_name:
+            tx["reference_tr_account_name"] = securities_account_name
 
     elif tx_type == "INTEREST":
         tx["credit_asset_code"] = currency
         tx["credit_amount"] = total
+        if cash_account_name:
+            tx["credit_tr_account_name"] = cash_account_name
+
+    elif tx_type == "AIRDROP":
+        # Incoming bonus credited as cash (e.g. PEA-activation gift). If a
+        # security is named, reference it like a dividend; otherwise it's a
+        # pure cash credit.
+        tx["credit_asset_code"] = currency
+        tx["credit_amount"] = total
+        if cash_account_name:
+            tx["credit_tr_account_name"] = cash_account_name
+        if isin:
+            tx["reference_asset_code"] = isin
+            tx["reference_asset_name"] = asset_name
+            if securities_account_name:
+                tx["reference_tr_account_name"] = securities_account_name
 
     elif tx_type == "TRANSFER":
         if event_type in _PEA_INBOUND_TRANSFER_EVENTS:
@@ -199,9 +297,9 @@ def build_dual_legged_transaction(
             tx["debit_asset_code"] = currency
             tx["debit_amount"] = total
             if pea_cash_account:
-                tx["credit_tr_cash_account"] = pea_cash_account
+                tx["credit_tr_account_name"] = _cash_account_name(pea_cash_account)
             if default_cash_account:
-                tx["debit_tr_cash_account"] = default_cash_account
+                tx["debit_tr_account_name"] = _cash_account_name(default_cash_account)
         elif (main_item.get("amount") or {}).get("value", 0) >= 0:
             tx["credit_asset_code"] = currency
             tx["credit_amount"] = total

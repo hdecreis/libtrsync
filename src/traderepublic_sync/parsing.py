@@ -34,6 +34,9 @@ def parse_currency_amount(text):
         .replace("+", "")
         .strip()
     )
+    # Drop any residual currency letters (e.g. TR writes USD as "$US", leaving
+    # "US" after the "$" is stripped) so float() doesn't choke.
+    cleaned = re.sub(r"[A-Za-z]", "", cleaned)
     # Detect decimal separator by which comes last.
     # Both present: last one is decimal (e.g. "1,023,999.01" → US; "1.000,99" → FR)
     # Only comma:   FR decimal (e.g. "15,635")
@@ -181,38 +184,44 @@ def _parse_transaction_nested(detail, result):
                 continue
             for sub in sec["data"]:
                 sub_title = sub.get("title", "")
+                sub_detail = sub.get("detail") if isinstance(sub.get("detail"), dict) else {}
+                # Value may sit in detail.text or detail.displayValue.text
+                # (bonds put "Valeur faciale" / "Quotation" in the latter).
                 sub_text = (
-                    sub.get("detail", {}).get("text", "")
-                    if isinstance(sub.get("detail"), dict)
-                    else ""
+                    sub_detail.get("text")
+                    or (sub_detail.get("displayValue") or {}).get("text")
+                    or ""
                 )
                 if sub_title in ("Actions", "Titres"):
                     result["quantity"] = parse_currency_amount(sub_text)
                 elif sub_title in ("Prix du titre", "Cours du titre"):
                     result["unit_price"] = parse_currency_amount(sub_text)
+                elif sub_title == "Valeur faciale":
+                    # Bonds quote in % of par and have no share count: the face
+                    # value (nominal, native ccy) is the quantity, held at unit
+                    # price 1; the market quote is the "Quotation" row.
+                    if result["quantity"] is None:
+                        result["quantity"] = parse_currency_amount(sub_text)
+                        if result["unit_price"] is None:
+                            result["unit_price"] = 1.0
                 elif sub_title == "Total":
                     if result["total"] is None:
                         result["total"] = parse_currency_amount(sub_text)
 
-    # Fallback: parse "3 x 17,41 EUR" from displayValue
+    # Fallback: parse "0,272717 × 91,67 EUR" or "0.004224 x 236,70 €"
+    # (round-ups use a lowercase 'x' and a dot decimal) from displayValue / text.
     if result["quantity"] is None:
-        display = detail.get("displayValue", {})
-        prefix = display.get("prefix", "")
-        text = display.get("text", "")
-        if prefix and "×" in prefix:  # ×
-            qty_str = (
-                prefix.split("×")[0]
-                .strip()
-                .replace(",", ".")
-                .replace("\xa0", "")
-                .replace(" ", "")
-                .replace(" ", "")
-            )
-            try:
-                result["quantity"] = float(qty_str)
-            except ValueError:
-                pass
-            result["unit_price"] = parse_currency_amount(text)
+        display = detail.get("displayValue") or {}
+        for cand in (display.get("prefix", ""), display.get("text", ""), detail.get("text", "")):
+            m = re.search(r"([0-9][0-9.,\s]*?)\s*[×xX]\s*([0-9][0-9.,\s]*)", cand or "")
+            if not m:
+                continue
+            qty = parse_currency_amount(m.group(1))
+            if qty is not None:
+                result["quantity"] = qty
+                if result["unit_price"] is None:
+                    result["unit_price"] = parse_currency_amount(m.group(2))
+                break
 
 
 def extract_isin_from_icon(icon_path):

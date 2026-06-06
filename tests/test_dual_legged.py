@@ -281,10 +281,11 @@ def test_pea_pay_in_stamps_both_legs_from_account_pairs():
 
     # No topology supplied → fields absent (back-compat).
     plain = build_dual_legged_transaction(item, parsed)
-    assert "credit_tr_cash_account" not in plain
-    assert "debit_tr_cash_account" not in plain
+    assert "credit_tr_account_name" not in plain
+    assert "debit_tr_account_name" not in plain
 
-    # Topology supplied → both legs stamped.
+    # Topology supplied → both legs stamped as the cash account NAMES the
+    # consumer already maps in the timeline.
     tx = build_dual_legged_transaction(
         item,
         parsed,
@@ -292,5 +293,85 @@ def test_pea_pay_in_stamps_both_legs_from_account_pairs():
         pea_cash_account="0254693513",        # TAX_WRAPPER (PEA) cash = dest
     )
     assert tx["transaction_type"] == "TRANSFER"
-    assert tx["credit_tr_cash_account"] == "0254693513"   # into PEA cash
-    assert tx["debit_tr_cash_account"] == "0254693511"    # out of CTO cash
+    assert tx["credit_tr_account_name"] == "Trade Republic (0254693513)"  # into PEA cash
+    assert tx["debit_tr_account_name"] == "Trade Republic (0254693511)"   # out of CTO cash
+
+
+# ── Trade legs named from account pairs (combined-vs-split routing) ─────────
+
+_PAIRS = [
+    {"productType": "DEFAULT", "cashAccountNumber": "0254693511", "securitiesAccountNumber": "SEC-CTO"},
+    {"productType": "TAX_WRAPPER", "cashAccountNumber": "0254693513", "securitiesAccountNumber": "SEC-PEA"},
+]
+
+
+def test_purchase_names_cash_and_securities_legs():
+    """A CTO purchase booked on the CTO cash account names credit→securities
+    ("Trade Republic CTO") and debit→cash ("Trade Republic (<cash#>)")."""
+    item = {
+        "eventType": "TRADING_SAVINGSPLAN_EXECUTED",
+        "cashAccountNumber": "0254693511",
+        "amount": {"value": -25.0, "currency": "EUR"},
+        "timestamp": "2026-05-25T08:00:00.000+0000",
+        "title": "Some ETF",
+    }
+    parsed = {"isin": "IE00TEST", "asset_name": "Some ETF", "quantity": 0.3,
+              "unit_price": 80.0, "total": 25.0}
+    tx = build_dual_legged_transaction(item, parsed, account_pairs=_PAIRS)
+    assert tx["transaction_type"] == "PURCHASE"
+    assert tx["credit_tr_account_name"] == "Trade Republic CTO"          # asset in
+    assert tx["debit_tr_account_name"] == "Trade Republic (0254693511)"  # cash out
+    # Without pairs, no per-leg names (consumer falls back to account_name).
+    plain = build_dual_legged_transaction(item, parsed)
+    assert "credit_tr_account_name" not in plain
+
+
+def test_purchase_resolves_product_when_no_cash_account_number():
+    """Trades that carry the product only in the detail (no cashAccountNumber)
+    still resolve their pair via the determined CTO/PEA name."""
+    item = {
+        "eventType": "TRADING_TRADE_EXECUTED",
+        "amount": {"value": -100.0, "currency": "EUR"},
+        "timestamp": "2026-05-25T08:00:00.000+0000",
+    }
+    parsed = {"isin": "X", "asset_name": "X", "account": "Compte-titres ordinaire",
+              "order_type": "achat", "total": 100.0, "quantity": 1, "unit_price": 100}
+    tx = build_dual_legged_transaction(item, parsed, account_pairs=_PAIRS)
+    assert tx["transaction_type"] == "PURCHASE"
+    assert tx["credit_tr_account_name"] == "Trade Republic CTO"
+    assert tx["debit_tr_account_name"] == "Trade Republic (0254693511)"
+
+
+def test_no_asset_credit_is_airdrop_not_sell():
+    """A positive-amount event with no security (e.g. PEA-activation gift,
+    eventType null) must not become a degenerate SELL — it's an AIRDROP credited
+    as cash to the account it landed on."""
+    item = {
+        "eventType": None,
+        "title": "Activation du PEA",
+        "cashAccountNumber": "0254693513",
+        "amount": {"value": 1.0, "currency": "EUR"},
+        "timestamp": "2025-02-23T18:20:31.000+0000",
+    }
+    parsed = {"isin": None, "event_description": "Vous avez reçu 1.00 €"}
+    tx = build_dual_legged_transaction(item, parsed, account_pairs=_PAIRS)
+    assert tx["transaction_type"] == "AIRDROP"
+    assert tx["credit_amount"] == pytest.approx(1.0)
+    assert tx["credit_asset_code"] == "EUR"
+    assert tx["credit_tr_account_name"] == "Trade Republic (0254693513)"
+    assert "debit_amount" not in tx
+    assert "reference_asset_code" not in tx   # no security named
+
+
+def test_dividend_names_cash_and_reference_legs():
+    item = {
+        "eventType": "SSP_CORPORATE_ACTION_CASH",
+        "cashAccountNumber": "0254693513",
+        "amount": {"value": 7.4, "currency": "EUR"},
+        "timestamp": "2026-05-25T08:00:00.000+0000",
+    }
+    parsed = {"isin": "FR0000120073", "asset_name": "Air Liquide", "total": 7.4}
+    tx = build_dual_legged_transaction(item, parsed, account_pairs=_PAIRS)
+    assert tx["transaction_type"] == "DIVIDEND"
+    assert tx["credit_tr_account_name"] == "Trade Republic (0254693513)"   # cash in
+    assert tx["reference_tr_account_name"] == "Trade Republic PEA"         # paying holding
