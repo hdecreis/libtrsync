@@ -5,6 +5,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-07-29
+
+Keep correlation ID between automatic top-ups (Cash account to PEA Cash account)
+and their related purchases
+
 ## [0.5.5] - 2026-06-05
 
 Two classification/routing fixes found via a full real-data audit.
@@ -474,7 +479,8 @@ Initial alpha release (tagged, never published to PyPI).
 - `deduplicate_pea` helper for collapsing TR's PEA mirror event pairs.
 - Type information (`py.typed` marker shipped in the wheel).
 
-[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/hdecreis/libtrsync/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.6
 [0.5.5]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.5
 [0.5.4]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.4
 [0.5.3]: https://github.com/hdecreis/libtrsync/releases/tag/v0.5.3
