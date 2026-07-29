@@ -9,6 +9,16 @@ import re
 
 _CURRENCY_RE = re.compile(r"\b(EUR|USD|CAD|CHF|GBP)\b")
 
+# A timeline event id is a plain UUID. TR uses ``timelineDetail`` actions to
+# cross-link related events (e.g. a PEA cash top-up embeds a tappable row that
+# points at the savings-plan execution it funds). The all-zeros UUID is a
+# placeholder TR emits for inline ``infoPage`` sub-payloads — never a real
+# event id, so exclude it.
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+
 
 def parse_currency_amount(text):
     """Parse a TR-formatted amount string into a float.
@@ -102,7 +112,17 @@ def parse_detail_sections(detail_response):
         "event_description": None,
         "currency": None,
         "document_urls": [],
+        "related_event_ids": [],
     }
+
+    # TR cross-links related events via ``timelineDetail`` actions buried in
+    # the detail tree (often a ``listItem`` whose section is titled
+    # "Transaction" but whose *item* title is empty, so the title-keyed loop
+    # below never sees it). Walk the whole response for those links — they're
+    # the only occurrence-level join between, e.g., a PEA cash top-up and the
+    # savings-plan purchase it funds.
+    self_id = detail_response.get("id")
+    _collect_related_event_ids(detail_response, self_id, result["related_event_ids"])
 
     sections = detail_response.get("sections", [])
 
@@ -172,6 +192,32 @@ def parse_detail_sections(detail_response):
                         result["document_urls"].append({"title": doc_title, "url": url})
 
     return result
+
+
+def _collect_related_event_ids(node, self_id, out):
+    """Recursively gather ``timelineDetail`` links to *other* timeline events.
+
+    Collects each ``action.payload`` where ``action.type == "timelineDetail"``
+    and the payload is a UUID that is neither the event's own id nor the
+    all-zeros placeholder. Order-preserving and de-duplicated. ``out`` is
+    mutated in place.
+    """
+    if isinstance(node, dict):
+        if node.get("type") == "timelineDetail":
+            payload = node.get("payload")
+            if (
+                isinstance(payload, str)
+                and _UUID_RE.match(payload)
+                and payload != _ZERO_UUID
+                and payload != self_id
+                and payload not in out
+            ):
+                out.append(payload)
+        for value in node.values():
+            _collect_related_event_ids(value, self_id, out)
+    elif isinstance(node, list):
+        for value in node:
+            _collect_related_event_ids(value, self_id, out)
 
 
 def _parse_transaction_nested(detail, result):

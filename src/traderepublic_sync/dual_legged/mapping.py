@@ -128,6 +128,20 @@ def determine_account(main_item, parsed_detail):
     return "Trade Republic", "BROKERAGE"
 
 
+def _is_pea_cash_pay_in(main_item, parsed_detail):
+    """True for a PEA cash top-up — money moving from the sibling CTO cash into
+    the PEA wrapper to fund a trade (French PEA rule: PEA cash is fed only from
+    the CTO). Recognised by TR's eventType (``PEA_SAVINGS_PLAN_PAY_IN`` /
+    ``PEA_DEPOSIT_DEBIT``) or, when the event is still pending and carries no
+    eventType, by its header "Vous investissez … dans votre PEA" (distinct from
+    the trade's "Vous avez épargné …").
+    """
+    if (main_item.get("eventType") or "") in _PEA_INBOUND_TRANSFER_EVENTS:
+        return True
+    description = (parsed_detail.get("event_description") or "").lower()
+    return "investissez" in description and "pea" in description
+
+
 def determine_tx_type(main_item, parsed_detail):
     """Determine transaction type from event type and detail context."""
     event_type = main_item.get("eventType", "")
@@ -135,6 +149,13 @@ def determine_tx_type(main_item, parsed_detail):
 
     if mapped is not None:
         return mapped
+
+    # PEA cash top-up still pending at fetch time: TR hasn't assigned its
+    # eventType yet (so EVENT_TYPE_MAP misses it) and its detail order_type is
+    # "Plan d'épargne", which would fall through to PURCHASE below. The header
+    # marks it as the funding transfer that feeds the trade, not the trade.
+    if _is_pea_cash_pay_in(main_item, parsed_detail):
+        return "TRANSFER"
 
     order_type = (parsed_detail.get("order_type") or "").lower()
     if "vente" in order_type or "sell" in order_type:
@@ -284,7 +305,7 @@ def build_dual_legged_transaction(
                 tx["reference_tr_account_name"] = securities_account_name
 
     elif tx_type == "TRANSFER":
-        if event_type in _PEA_INBOUND_TRANSFER_EVENTS:
+        if _is_pea_cash_pay_in(main_item, parsed_detail):
             # PEA top-up: money arriving in the PEA cash account, funded only
             # from the sibling CTO cash account (French PEA rule). The event
             # itself is booked against the CTO cash (``cashAccountNumber`` is
@@ -336,6 +357,14 @@ def build_dual_legged_transaction(
     tx["tr_event_type"] = event_type
     tx["tr_cash_account"] = main_item.get("cashAccountNumber")
     tx["tr_status"] = main_item.get("status")
+    # Occurrence-level cross-links TR embeds in the detail (e.g. a PEA cash
+    # top-up points at the savings-plan purchase it funds). Lets a consumer
+    # join the funding transfer to the real trade — neither amount, date nor
+    # ISIN pair them reliably (the top-up can be smaller than the trade when
+    # PEA cash holds a residual). One-directional, as TR emits it.
+    tx["related_tr_ids"] = [
+        normalize_tr_id(i) for i in parsed_detail.get("related_event_ids", [])
+    ]
 
     return tx
 

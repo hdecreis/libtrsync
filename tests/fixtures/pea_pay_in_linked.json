@@ -1,0 +1,120 @@
+{
+  "id": "cf211788-f173-4a67-b26f-16392e640f34",
+  "timestamp": "2026-06-08T23:44:44.732+0000",
+  "title": "Crédit Agricole",
+  "icon": "logos/FR0000045072/v2",
+  "avatar": {
+    "asset": "logos/FR0000045072/v2",
+    "badge": null
+  },
+  "badge": null,
+  "subtitle": "PEA",
+  "amount": {
+    "currency": "EUR",
+    "value": -10.36,
+    "fractionDigits": 2
+  },
+  "subAmount": null,
+  "status": "EXECUTED",
+  "action": {
+    "type": "timelineDetail",
+    "payload": "cf211788-f173-4a67-b26f-16392e640f34"
+  },
+  "cashAccountNumber": "0254693511",
+  "hidden": false,
+  "deleted": false,
+  "eventType": null,
+  "_detail_raw": {
+    "id": "cf211788-f173-4a67-b26f-16392e640f34",
+    "sections": [
+      {
+        "title": "Vous investissez 10.36 € dans votre PEA",
+        "data": {
+          "timestamp": "2026-06-08T23:44:44.732724Z",
+          "status": "executed"
+        },
+        "type": "header"
+      },
+      {
+        "title": "Synthèse",
+        "data": [
+          {
+            "title": "Statut",
+            "detail": {
+              "text": "En cours d'exécution",
+              "functionalStyle": "PENDING",
+              "type": "status"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Compte",
+            "detail": {
+              "text": "PEA",
+              "displayValue": {
+                "text": "PEA"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Type d'ordre",
+            "detail": {
+              "text": "Plan d'épargne",
+              "displayValue": {
+                "text": "Plan d'épargne"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          },
+          {
+            "title": "Actifs",
+            "detail": {
+              "text": "Crédit Agricole",
+              "displayValue": {
+                "text": "Crédit Agricole"
+              },
+              "type": "text"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "title": "Transaction",
+        "data": [
+          {
+            "title": "",
+            "detail": {
+              "leading": {
+                "type": "avatar",
+                "icon": "logos/FR0000045072/v2"
+              },
+              "content": {
+                "type": "default",
+                "title": "Crédit Agricole",
+                "subtitle": "08 juin • Plan d'épargne"
+              },
+              "trailing": {
+                "type": "value",
+                "title": "30,00 €",
+                "titleColor": "default",
+                "strikethrough": false
+              },
+              "action": {
+                "payload": "f15b1a0f-4ed3-46ba-bbdd-9ff6dd8c2f48",
+                "type": "timelineDetail"
+              },
+              "type": "listItem"
+            },
+            "style": "plain"
+          }
+        ],
+        "type": "table"
+      }
+    ]
+  }
+}
