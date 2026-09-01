@@ -26,7 +26,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "websockets>=15,<17",
+    "websockets>=15,<18",
     "requests>=2.31,<3",
 ]
 
